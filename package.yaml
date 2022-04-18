@@ -24,6 +24,8 @@ dependencies:
 
 library:
   source-dirs: src
+  ghc-options:
+  - -package template-haskell
 
 executables:
   mafi-lambda-calculus-exe:
@@ -46,3 +48,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - mafi-lambda-calculus
+    - hspec
+
