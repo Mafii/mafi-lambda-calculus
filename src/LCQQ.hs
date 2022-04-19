@@ -1,6 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
-{-# LANGUAGE TypeFamilies #-}
 
 -- Inspired by https://github.com/tweag/HaskellR/blob/ace283d47a89d680d03182461f4dba98da2ee042/inline-r/src/Language/R/QQ.hs
 module LCQQ (λ, lambda) where
@@ -89,17 +88,17 @@ appendCharToTokenText _ _ = error "only defined for variables"
 --          | λ<var> . <λexp>
 --          | ( <λexp> <λexp> )
 
+-- (Either Token PartialAst)-like type to manually overwrite show
 data TokenOrPartialAst = Token Token | PartialAst PartialAst
 
-data PartialAst = Empty | Expression [TokenOrPartialAst] | Expressions [PartialAst] | FreeVariable String | FreeVariableDeclaration String | BoundVariable String
+data PartialAst = Empty | Expression [TokenOrPartialAst] | Expressions [PartialAst] | FreeVariableDeclaration String | VariableUsage String
 
 instance Show PartialAst where
   show Empty = "<empty ast>"
-  show (Expression tokens) = "(" ++ show tokens ++ ")"
-  show (Expressions exps) = "(" ++ show exps ++ ")"
-  show (FreeVariable id) = id
+  show (Expression tokens) = show tokens
+  show (Expressions exps) = show exps
+  show (VariableUsage id) = " " ++ id ++ " "
   show (FreeVariableDeclaration id) = "λ." ++ id
-  show (BoundVariable id) = id
 
 instance Show TokenOrPartialAst where
   show (Token token) = show token
@@ -115,7 +114,10 @@ groupExpressions (OpeningParenthesis: tokens) = handleRest (getParanethesisConte
     handleRest (WithRest ast rest) = Expressions $ ast : [groupExpressions rest]
 groupExpressions (LambdaCharacter: tokens) = getFunctionAbstractionContent tokens Empty
 groupExpressions (LambdaWord: tokens) = getFunctionAbstractionContent tokens Empty
-groupExpressions _ = error "unhandled case, likely invalid syntax or mismatching/unbalanced brackets"
+groupExpressions [VariableUsageOrBinding id] = VariableUsage id
+groupExpressions ((VariableUsageOrBinding id): tokens) = Expressions (VariableUsage id : [groupExpressions tokens])
+groupExpressions (Space: tokens) = groupExpressions tokens -- we simply ignore whitespace
+groupExpressions _ = error "unhandled case, likely invalid syntax"
 
 data GroupingResult = WithRest PartialAst [Token] | WithoutRest PartialAst
   deriving (Show)
@@ -124,10 +126,11 @@ getParanethesisContent :: [Token] -> PartialAst -> GroupingResult
 getParanethesisContent [] _ = error "Unbalanced parantheses, could not parse into lc expression"
 getParanethesisContent [ClosingParenthesis] (Expression tokensAndAsts) = WithoutRest (Expression tokensAndAsts)
 getParanethesisContent (ClosingParenthesis: tokens) (Expression tokensAndAsts) = WithRest (Expression tokensAndAsts) tokens
-getParanethesisContent (OpeningParenthesis: tokens) (Expression tokensAndAsts) = do
-  let (result, rest) = case getParanethesisContent tokens Empty of (WithRest ast r) -> (ast, r)
-                                                                   (WithoutRest ast) -> (ast, [])
-  getParanethesisContent rest (Expression (tokensAndAsts ++ [PartialAst result]))
+getParanethesisContent (OpeningParenthesis: tokens) (Expression tokensAndAsts) = handleRest getParanethesisContent tokens tokensAndAsts
+-- getParanethesisContent (OpeningParenthesis: tokens) (Expression tokensAndAsts) = do
+--   let (result, rest) = case getParanethesisContent tokens Empty of (WithRest ast r) -> (ast, r)
+--                                                                    (WithoutRest ast) -> (ast, [])
+--   getParanethesisContent rest (Expression (tokensAndAsts ++ [PartialAst result]))
 getParanethesisContent (token: tokens) Empty = getParanethesisContent tokens (append (Expression []) (Token token))
 getParanethesisContent (token: tokens) exp = getParanethesisContent tokens (append exp (Token token))
 
@@ -141,7 +144,24 @@ append _ _ = error "Can only append token to expression"
 -- WithoutRest ([<var a>,<space>,<var x>,<space>,([<var b>])])
 
 getFunctionAbstractionContent :: [Token] -> PartialAst -> PartialAst
-getFunctionAbstractionContent (.) = error "not implemented"
+getFunctionAbstractionContent (FunctionAbstractionDot: tokens) (Expression tokensAndAsts) = Expression (tokensAndAsts ++ [PartialAst (groupExpressions tokens)])
+getFunctionAbstractionContent ((VariableUsageOrBinding id): tokens) Empty = getFunctionAbstractionContent tokens (Expression [PartialAst $ FreeVariableDeclaration id])
+getFunctionAbstractionContent (Space: tokens) Empty = getFunctionAbstractionContent tokens Empty -- we ignore whitespace here
+getFunctionAbstractionContent (Space: tokens) (Expression tokensAndAsts) = getFunctionAbstractionContent tokens (Expression tokensAndAsts) -- we ignore whitespace here
+getFunctionAbstractionContent _ _ = error "Error parsing function abstraction. Did you acidentially add multiple parameters? LC only allows for one parameter to its function abstractions. \n  Valid: λ a .<anything> \n  Also Valid: λa.a \n  Invalid: λa b.<anything>"
+
+-- >>> (tokenize "a .(a)")
+-- >>> getFunctionAbstractionContent it Empty
+-- [<var a>,<space>,<dot>,(,<var a>,)]
+-- ([λ.a,([<var a>])])
+
+
+handleRest :: ([Token] -> PartialAst -> GroupingResult) -> [Token] -> [TokenOrPartialAst] -> GroupingResult
+handleRest handler tokens tokensSoFar = do
+  let (result, rest) = toTuple $ handler tokens Empty
+  handler rest (Expression (tokensSoFar ++ [PartialAst result]))
+  where toTuple result = case result of (WithRest ast r) -> (ast, r)
+                                        (WithoutRest ast) -> (ast, [])
 
 -- >>> setLocaleEncoding utf8 
 -- >>> (tokenize "λa. a (b))")
@@ -149,12 +169,36 @@ getFunctionAbstractionContent (.) = error "not implemented"
 
 interpret :: PartialAst -> Term
 interpret Empty = error "Empty token list can not be interpreted"
-interpret (Expression tokensAndAsts) = Var (show tokensAndAsts)
-interpret (Expressions [rhs,lhs]) = App (interpret lhs) (interpret rhs)
+interpret (Expression [PartialAst (FreeVariableDeclaration id), PartialAst body]) = Abs id (interpret body)
+interpret (Expression tokensAndAsts) = error "not sure if this path is ever used so it is disabled temporarily" -- interpret' tokensAndAsts
+interpret (Expressions [lhs,rhs]) = App (interpret lhs) (interpret rhs)
 interpret (Expressions xs) = error $ "Maximum of 2 expressions can be at the same level (e.g. application of rhs to lhs), but there are" ++ show (length xs)
-interpret _ = undefined 
+interpret (VariableUsage id) = Var id
+interpret (FreeVariableDeclaration id) = error $ "Can not have anonymous function declaration without body" ++ "\n  hint: The Variable declaration is similar to " ++ show (FreeVariableDeclaration id)
 
--- >>> parse' "a"
+interpret' :: [TokenOrPartialAst] -> Term
+interpret' [PartialAst (VariableUsage id)] = Var id
+interpret' (PartialAst (VariableUsage id) : rest) = App (Var id) (interpret' rest)
+interpret' _ = error "unexpected token or partial ast for application interpretation"
+
+-- >>> parse' "a b c"
+-- a b c
+
+-- >>> parse' "λa.a"
+-- (λa. a)
+
+-- >>> parse' "λa.a a"
+-- (λa. a a)
+
+-- >>> parse' "λa. a xx ax xx"
+-- (λa. a xx ax xx)
+
+-- >>> (groupExpressions . tokenize) "λa. a xx ax xx"
+-- >>> interpret it
+-- [λ.a,[ a ,[ xx ,[ ax , xx ]]]]
+-- (λa. a xx ax xx)
+
+
 
 -- leftovers:
 -- working simple non-complete examples
