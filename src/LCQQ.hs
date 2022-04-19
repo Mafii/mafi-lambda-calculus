@@ -26,12 +26,25 @@ lambda = λ
 parse :: String -> Q TH.Exp
 parse = undefined
 
+-- complete BNF syntax (Variable, Function Abstraction, Application):
+-- <λexp> ::= <var>
+--          | λ<var> . <λexp>
+--          | ( <λexp> <λexp> )
+
+parseVariable :: String -> Q TH.Exp
+parseVariable str = undefined
+
+-- leftovers:
+-- working simple non-complete examples
+
+-- pass in any variable name, get a correct Var Term expression returned
 parse' :: String -> Q TH.Exp
 parse' txt = do
   x :: Exp <- TH.litE $ TH.StringL $ removeSpaces txt
   y :: Exp <- [|Var|]
   return $ TH.AppE y x
 
+-- just returns a string literal as haskell expression
 parse'' :: String -> Q TH.Exp
 parse'' txt = do
   return $ TH.LitE $ TH.StringL txt
