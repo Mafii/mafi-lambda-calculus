@@ -42,23 +42,10 @@ instance Show Token where
   show Newline = "<newline>"
   show (VariableUsageOrBinding id) = "<var " ++ id ++ ">"
 
--- >>> OpeningParenthesis
--- >>> VariableBinding "abc"
--- OpeningParenthesis
--- VariableBinding "abc"
-
 parse' :: String -> Term
 parse' = undefined
 
 -- parse' text = fromJust $ unwrap (interpret' (tokenize text)) NoTokens -- unwrap . readToEnd . interpret . tokenize
-
-{-
-readToEnd :: (AbortReason -> t) -> t
-readToEnd f = f NoTokens
-
-unwrap :: GroupingResult -> AbortReason -> Maybe Term
-unwrap (Grouping r t ts) allowedReason = if allowedReason == r then t else t -- error $ "Invalid reason: \n  " ++ show r ++ "\n  Expected:" ++ show allowedReason
--}
 
 tokenize :: String -> [Token]
 tokenize text = tokenize' text []
@@ -104,45 +91,31 @@ appendCharToTokenText _ _ = error "only defined for variables"
 --          | λ<var> . <λexp>
 --          | ( <λexp> <λexp> )
 
--- (Either Token PartialAst)-like type to manually overwrite show
--- data TokenOrPartialAst = Token Token | PartialAst PartialAst
-
--- data PartialAst = Empty | Expression [TokenOrPartialAst] | Expressions [PartialAst] | FreeVariableDeclaration String | VariableUsage String
-
---instance Show PartialAst where
--- show Empty = "<empty ast>"
---  show (Expression tokens) = show tokens
--- show (Expressions exps) = show exps
--- show (VariableUsage id) = " " ++ id ++ " "
--- show (FreeVariableDeclaration id) = "λ." ++ id
-
---instance Show TokenOrPartialAst where
---show (Token token) = show token
--- show (PartialAst ast) = show ast
-
 data Ast = Empty | Application Ast Ast | Abstraction String Ast | Variable String
   deriving (Eq)
 
 instance Show Ast where
-  show Empty = "<e>"
+  show Empty = "<empty>"
   show (Variable id) = id
-  show (Application ast ast') = show ast ++ " " ++ show ast'
-  show (Abstraction id ast) = "λ" ++ id ++ "." ++ show ast
+  show (Application ast ast') = "(" ++ show ast ++ " " ++ show ast' ++ ")"
+  show (Abstraction id ast) = "(λ" ++ id ++ "." ++ show ast ++ ")"
 
-data AbortReason = NoTokens | Parenthesis | Dot
+data AbortReason = NoTokens | Parenthesis | Dot | MatchOnlyOneElement
   deriving (Show, Eq)
 
 type TakeUntil = AbortReason
 
-data ParseResult = Success Ast [Token] | Error AbortReason
+data ParseResult = Success Ast [Token] | Abort AbortReason | OuterAbort AbortReason [Token]
 
 instance Show ParseResult where
   show (Success ast []) = show ast
-  show (Success ast tokens) = "<Success: (" ++ show ast ++ ")" ++ "Unhandled: " ++ show tokens ++ ">"
-  show (Error r) = "Error: " ++ show r
+  show (Success ast tokens) = "<Success: (" ++ show ast ++ ") - Unhandled: " ++ show tokens ++ ">"
+  show (Abort r) = "Error: " ++ show r
+  show (OuterAbort r tokens) = "Outer abort Error: " ++ show r ++ " - " ++ show tokens
 
 -- TODO: handle multiple top level statements
 -- Workaround: Add parenthesis atm
+-- Maybe this is fine as permanent solution
 parse'' :: [Token] -> Term
 parse'' [] = error "No Tokens"
 parse'' tokens = resultToTerm $ parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter tokens) NoTokens
@@ -159,41 +132,68 @@ wrapIntoParenthesis ts = OpeningParenthesis : ts ++ [ClosingParenthesis]
 -- expects no whitespace tokens, and lambda token over characters
 -- TODO: ensure this is by design with types
 parse''' :: [Token] -> TakeUntil -> ParseResult
-parse''' [] until = if until == NoTokens then Success Empty [] else Error NoTokens
+parse''' [] until = if until == NoTokens then Success Empty [] else Abort NoTokens
 parse''' (OpeningParenthesis : tokens) until = extendResultUntil (parse''' tokens Parenthesis) until
-parse''' (ClosingParenthesis : tokens) until = if until == Parenthesis then Success Empty tokens else Error Parenthesis
--- Bug: Takes too much. Needs to be less greedy
+parse''' (ClosingParenthesis : tokens) until = if until == Parenthesis then Success Empty tokens else Abort Parenthesis
 parse''' (VariableUsageOrBinding id : tokens) until = extendResultUntil (Success (Variable id) tokens) until
--- parse''' (VariableUsageOrBinding id : tokens) until = extendResultUntilOrUntilError (Success (Variable id) tokens) (Success Empty []) until
 parse''' (LambdaCharacter : VariableUsageOrBinding id : FunctionAbstractionDot : tokens) until = createAbstraction id (extendResultUntil (parse''' tokens until) until)
-parse''' ts r = error $ "unhandled: " ++ show ts ++ show r
+parse''' ts r = error $ "parse error: unhandled case: " ++ show ts ++ show r
 
 createAbstraction :: String -> ParseResult -> ParseResult
 createAbstraction id (Success ast tokens) = Success (Abstraction id ast) tokens
-createAbstraction _ e@(Error _) = e
+createAbstraction _ e@(Abort _) = e
+createAbstraction _ e@(OuterAbort _ _) = e
 
 resultToTerm :: ParseResult -> Term
 resultToTerm = undefined
 
 extendResultUntil :: ParseResult -> TakeUntil -> ParseResult
-extendResultUntil s@(Success ast []) until = s -- if until == NoTokens then s else Error NoTokens
-extendResultUntil s@(Success ast tokens) until = createApplication s (parse''' tokens until)
-extendResultUntil e@(Error r) until = e
+extendResultUntil s@(Success ast []) until = s
+extendResultUntil s@(Success ast tokens) MatchOnlyOneElement = s
+extendResultUntil s@(Success ast tokens) until = createApplicationWithResultExtension s until s
+extendResultUntil e@(Abort r) until = if r == until then Success Empty [] else e
+extendResultUntil e@(OuterAbort r tokens) until = if r == until then Success Empty tokens else e
 
--- non-greedy attempt of scope extension
---extendResultUntilOrUntilError :: ParseResult -> ParseResult -> TakeUntil -> ParseResult
---extendResultUntilOrUntilError s@(Success ast []) previous until = if until == NoTokens then s else Error NoTokens
---extendResultUntilOrUntilError s@(Success ast tokens) previous until = createApplication s (parse''' tokens until)
---extendResultUntilOrUntilError e@(Error r) previous until = previous
+-- ensures that (a b c) is interpreted as ((a b) c)
+-- this method may only call parse''' with MatchOnlyOneElement or it introduces a runtime bug
+createApplicationWithResultExtension :: ParseResult -> TakeUntil -> ParseResult -> ParseResult
+createApplicationWithResultExtension s@(Success ast tokens) MatchOnlyOneElement _ = error "undefined behaviour, bug in the parser"
+createApplicationWithResultExtension s@(Success ast []) until _ = s
+createApplicationWithResultExtension s@(Success (Application _ Empty) tokens) _ _ = s
+createApplicationWithResultExtension s@(Success ast tokens) until _ =
+  createApplicationWithResultExtension (createApplication s (parse''' tokens MatchOnlyOneElement)) until s
+createApplicationWithResultExtension e@(OuterAbort r tokens) until _
+  | r == until = OuterAbort r tokens
+  | otherwise = e
+createApplicationWithResultExtension e@(Abort r) until previous@(Success ast tokens)
+  | r == until = OuterAbort r tokens
+  | otherwise = e
+-- createApplicationWithResultExtension e@(Abort r) until previous@(Success ast tokens) = if r == until then Success Empty tokens else e -- Success Empty tokens else e
+createApplicationWithResultExtension _ _ _ = error "unhandled parser case"
 
--- unhandled tokens of lhs are ignored
+-- unhandled tokens of lhs are ignored by design as they are used to create rhs and the rest of that is inside rhs
 -- TODO: these operations could be simplified by using a custom result monad that would stay error on projection
 createApplication :: ParseResult -> ParseResult -> ParseResult
 createApplication lhs@(Success ast _) (Success Empty tokens) = Success ast tokens -- Application of any <ast> <- <empty> equals <ast>
 createApplication lhs@(Success ast _) rhs@(Success ast' tokens) = Success (Application ast ast') tokens
-createApplication lhs rhs = error $ "left or right is error: \n  Left: " ++ show lhs ++ "\n  Right:" ++ show rhs
+createApplication lhs@(Success ast tokens) rhs@(Abort reason) = rhs
+createApplication _ _ = undefined
 
--- >>> tokenize "(lambda a. lambda b . (b c))"
+-- >>> tokenize "(lambda a. lambda b . (b c)) 5"
 -- >>> parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
--- [(,lambda,<space>,<var a>,<dot>,<space>,lambda,<space>,<var b>,<space>,<dot>,<space>,(,<var b>,<space>,<var c>,),)]
--- λa.λb.b c
+-- [(,lambda,<space>,<var a>,<dot>,<space>,lambda,<space>,<var b>,<space>,<dot>,<space>,(,<var b>,<space>,<var c>,),),<space>,<var 5>]
+-- <Success: (((λa.((λb.((b c) <empty>)) <empty>)) <empty>))Unhandled: [),),<var 5>,)]>
+
+-- Bug: (toplevel (sub)) (toplevel') becomes (toplevel (sub toplevel')) which is wrong
+
+-- >>> tokenize "(top) (top') (top''')"
+-- >>> parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
+-- [(,<var top>,),<space>,(,<var top'>,),<space>,(,<var top'''>,)]
+-- <Success: ((top <empty>))Unhandled: [),(,<var top'>,),(,<var top'''>,),)]>
+
+-- foldr instead of foldl like behaviour is the bug
+
+-- >>> tokenize "lambda a. a b c 5"
+-- >>> parse''' (filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
+-- [lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,<var b>,<space>,<var c>,<space>,<var 5>]
+-- (λa.(((a b) c) 5))
