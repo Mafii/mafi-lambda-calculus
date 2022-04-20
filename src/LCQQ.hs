@@ -45,8 +45,6 @@ instance Show Token where
 parse' :: String -> Term
 parse' = parse'' . tokenize
 
--- parse' text = fromJust $ unwrap (interpret' (tokenize text)) NoTokens -- unwrap . readToEnd . interpret . tokenize
-
 tokenize :: String -> [Token]
 tokenize text = tokenize' text []
 
@@ -114,7 +112,7 @@ instance Show ParseResult where
 
 -- TODO: handle multiple top level statements
 -- Workaround: Add parenthesis atm
--- Maybe this is fine as permanent solution
+-- This is likely fine as permanent solution
 parse'' :: [Token] -> Term
 parse'' [] = error "No Tokens"
 parse'' tokens = resultToTerm $ parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter tokens) NoTokens
@@ -207,7 +205,7 @@ test it = parse''' (filterWhitespace $ replaceLambdaWordWithCharacter it) NoToke
 -- >>> tokenize "lambda a. a b g"
 -- >>> test it
 -- [(,lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,<var b>,<space>,<var g>,),<space>,<var 5>]
--- <Success: ((((λa.a) b) g)) - Unhandled: [<var 5>]>
+-- ((λa.((a b) g)) 5)
 -- [lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,<var b>,<space>,<var g>]
 -- (λa.((a b) g))
 
@@ -228,4 +226,4 @@ test it = parse''' (filterWhitespace $ replaceLambdaWordWithCharacter it) NoToke
 -- ((λa.b) 5)
 
 -- >>> test $ tokenize "((lambda a . lambda b . 5) 8)"
--- ((λa.(λb.5)) 8)
+-- (λa.((λb.5) 8))
