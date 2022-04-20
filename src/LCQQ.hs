@@ -124,9 +124,9 @@ data Ast = Empty | Application Ast Ast | Abstraction String Ast | Variable Strin
   deriving (Eq)
 
 instance Show Ast where
-  show Empty = "<empty>"
+  show Empty = "<e>"
   show (Variable id) = id
-  show (Application ast ast') = "(" ++ show ast ++ " " ++ show ast' ++ ")"
+  show (Application ast ast') = show ast ++ " " ++ show ast'
   show (Abstraction id ast) = "λ" ++ id ++ "." ++ show ast
 
 data AbortReason = NoTokens | Parenthesis | Dot
@@ -162,7 +162,9 @@ parse''' :: [Token] -> TakeUntil -> ParseResult
 parse''' [] until = if until == NoTokens then Success Empty [] else Error NoTokens
 parse''' (OpeningParenthesis : tokens) until = extendResultUntil (parse''' tokens Parenthesis) until
 parse''' (ClosingParenthesis : tokens) until = if until == Parenthesis then Success Empty tokens else Error Parenthesis
+-- Bug: Takes too much. Needs to be less greedy
 parse''' (VariableUsageOrBinding id : tokens) until = extendResultUntil (Success (Variable id) tokens) until
+-- parse''' (VariableUsageOrBinding id : tokens) until = extendResultUntilOrUntilError (Success (Variable id) tokens) (Success Empty []) until
 parse''' (LambdaCharacter : VariableUsageOrBinding id : FunctionAbstractionDot : tokens) until = createAbstraction id (extendResultUntil (parse''' tokens until) until)
 parse''' ts r = error $ "unhandled: " ++ show ts ++ show r
 
@@ -170,107 +172,28 @@ createAbstraction :: String -> ParseResult -> ParseResult
 createAbstraction id (Success ast tokens) = Success (Abstraction id ast) tokens
 createAbstraction _ e@(Error _) = e
 
--- >>> tokenize "(a b)"
--- >>> parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
--- [(,<var a>,<space>,<var b>,)]
--- ((a (b <empty>)) <empty>)
-
 resultToTerm :: ParseResult -> Term
 resultToTerm = undefined
 
 extendResultUntil :: ParseResult -> TakeUntil -> ParseResult
-extendResultUntil s@(Success ast []) until = if until == NoTokens then s else Error NoTokens
+extendResultUntil s@(Success ast []) until = s -- if until == NoTokens then s else Error NoTokens
 extendResultUntil s@(Success ast tokens) until = createApplication s (parse''' tokens until)
 extendResultUntil e@(Error r) until = e
+
+-- non-greedy attempt of scope extension
+--extendResultUntilOrUntilError :: ParseResult -> ParseResult -> TakeUntil -> ParseResult
+--extendResultUntilOrUntilError s@(Success ast []) previous until = if until == NoTokens then s else Error NoTokens
+--extendResultUntilOrUntilError s@(Success ast tokens) previous until = createApplication s (parse''' tokens until)
+--extendResultUntilOrUntilError e@(Error r) previous until = previous
 
 -- unhandled tokens of lhs are ignored
 -- TODO: these operations could be simplified by using a custom result monad that would stay error on projection
 createApplication :: ParseResult -> ParseResult -> ParseResult
+createApplication lhs@(Success ast _) (Success Empty tokens) = Success ast tokens -- Application of any <ast> <- <empty> equals <ast>
 createApplication lhs@(Success ast _) rhs@(Success ast' tokens) = Success (Application ast ast') tokens
 createApplication lhs rhs = error $ "left or right is error: \n  Left: " ++ show lhs ++ "\n  Right:" ++ show rhs
 
-{-
-interpret :: [Token] -> AbortReason -> GroupingResult
-interpret [] _ = Grouping NoTokens Nothing []
-interpret (OpeningParenthesis : tokens) r = foldRest (getParanethesisContent tokens) r
-interpret (ClosingParenthesis : tokens) Parentesis = Grouping Parentesis Nothing tokens
-interpret (LambdaCharacter : tokens) r = foldRest (fromJust $ getFunctionAbstractionContent tokens r) r
-interpret (LambdaWord : tokens) r = foldRest (fromJust $ getFunctionAbstractionContent tokens r) r -- todo: allow lambda as variable name when context is clear (this requires look-ahead and rewind if we fail binding lambda as function marker)
-interpret (VariableUsageOrBinding id : tokens) r = foldRest (Grouping r (Just $ Var id) tokens) r
-interpret (FunctionAbstractionDot : tokens) Dot = Grouping Dot Nothing tokens
--- ignore whitespace
-interpret (Space : tokens) r = interpret tokens r
-interpret (Newline : tokens) r = interpret tokens r
--- unexpected cases (e.g. unbalanced parenthesis)
-interpret ts r = error $ "unhandled" ++ show ts ++ show r
--}
-
-{-
-foldRest :: GroupingResult -> AbortReason -> GroupingResult
-foldRest (Grouping r t ts) expectedReason
-  | Just term <- t = do
-    let result = foldRest (interpret ts r) expectedReason
-    case unwrap result expectedReason of
-      Just val -> Grouping expectedReason (Just $ App term val) (getRestFromGrouping result)
-      Nothing -> Grouping expectedReason (Just term) (getRestFromGrouping result)
-  | otherwise = foldRest (interpret ts r) expectedReason
--}
-{-
-ensureReasonOrThrow :: GroupingResult -> AbortReason -> GroupingResult
-ensureReasonOrThrow (Grouping r t ts) expected =
-  if r == expected
-    then Grouping r t ts
-    else error $ "Aborted syntax parsing due to invalid syntax.  \n  Hint: Did you close all your parenthesis correctly?" ++ "\n  Expected abort reason: " ++ show expected ++ "\n  Actual abort reason" ++ show r
-
-getParanethesisContent :: [Token] -> GroupingResult
--- getParanethesisContent tokens = interpret tokens Parentesis
-getParanethesisContent tokens = interpret' tokens
-
-append :: PartialAst -> TokenOrPartialAst -> PartialAst
-append (Expression exp) token = Expression (exp ++ [token])
-append _ _ = error "Can only append token to expression"
-
-getFunctionAbstractionContent :: [Token] -> AbortReason -> Maybe GroupingResult
-getFunctionAbstractionContent tokens outerAbortReason =
-  do
-    -- let parsed = interpret tokens Dot
-    let parsed = interpret' tokens
-    term <- unwrap parsed Dot
-    var <- getVarOrNothing term
-    id <- getId var
-    body <- getBodyOrNothing parsed outerAbortReason
-    let rest = getRestFromGrouping body
-    term <- getTermFromBody body
-    let abs = Abs id term
-    Just $ Grouping outerAbortReason (Just $ Abs id term) rest
-
-getVarOrNothing :: Term -> Maybe Term
-getVarOrNothing (Var id) = Just $ Var id
-getVarOrNothing _ = Nothing
-
-getBodyOrNothing :: GroupingResult -> AbortReason -> Maybe GroupingResult
-getBodyOrNothing (Grouping r (Just t) ts) outerAbortReason = Just $ ensureReasonOrThrow (interpret' ts) outerAbortReason
-getBodyOrNothing _ _ = Nothing
-
-getId :: Term -> Maybe Id
-getId (Var id) = Just id
-getId _ = Nothing
-
-getRestFromGrouping :: GroupingResult -> [Token]
-getRestFromGrouping (Grouping _ _ ts) = ts
-
-getTermFromBody :: GroupingResult -> Maybe Term
-getTermFromBody (Grouping _ t _) = t
-
--- >>> tokenize "lambda a . ab"
--- >>> -- interpret it NoTokens
--- [lambda,<space>,<var a>,<space>,<dot>,<space>,<var ab>]
-
--- >>> tokenize "lambda a . ab"
--- >>> interpret' it
--- [lambda,<space>,<var a>,<space>,<dot>,<space>,<var ab>]
--- Maybe.fromJust: Nothing
-
--- >>> interpret' $ tokenize "lambda a.a"
--- Maybe.fromJust: Nothing
--}
+-- >>> tokenize "(lambda a. lambda b . (b c))"
+-- >>> parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
+-- [(,lambda,<space>,<var a>,<dot>,<space>,lambda,<space>,<var b>,<space>,<dot>,<space>,(,<var b>,<space>,<var c>,),)]
+-- λa.λb.b c
