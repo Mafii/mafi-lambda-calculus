@@ -132,14 +132,14 @@ wrapIntoParenthesis ts = OpeningParenthesis : ts ++ [ClosingParenthesis]
 -- TODO: ensure this is by design with types
 parse''' :: [Token] -> TakeUntil -> ParseResult
 parse''' [] until = if until == NoTokens then Success Empty [] else Abort NoTokens []
-parse''' (OpeningParenthesis : tokens) until = parseParenthesisContent tokens until
+parse''' (OpeningParenthesis : tokens) _ = parseParenthesisContent tokens
 parse''' (ClosingParenthesis : tokens) until = if until == Parenthesis then Success Empty tokens else Abort Parenthesis tokens
 parse''' (VariableUsageOrBinding id : tokens) until = extendResultUntil (Success (Variable id) tokens) until
 parse''' (LambdaCharacter : VariableUsageOrBinding id : FunctionAbstractionDot : tokens) until = createAbstraction id (extendResultUntil (parse''' tokens until) until)
 parse''' ts r = error $ "parse error: unhandled case: " ++ show ts ++ show r
 
-parseParenthesisContent :: [Token] -> TakeUntil -> ParseResult
-parseParenthesisContent tokens = extendResultUntil (parse''' tokens Parenthesis)
+parseParenthesisContent :: [Token] -> ParseResult
+parseParenthesisContent tokens = extendResultUntil (parse''' tokens MatchOnlyOneElement) Parenthesis
 
 createAbstraction :: String -> ParseResult -> ParseResult
 createAbstraction id (Success ast tokens) = Success (Abstraction id ast) tokens
@@ -186,7 +186,7 @@ test it = parse''' (filterWhitespace $ replaceLambdaWordWithCharacter it) NoToke
 -- >>> tokenize "lambda a. a b g"
 -- >>> test it
 -- [(,lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,<var b>,<space>,<var g>,),<space>,<var 5>]
--- (λa.(((a b) g) 5))
+-- <Success: ((((λa.a) b) g)) - Unhandled: [<var 5>]>
 -- [lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,<var b>,<space>,<var g>]
 -- (λa.((a b) g))
 
@@ -202,3 +202,9 @@ test it = parse''' (filterWhitespace $ replaceLambdaWordWithCharacter it) NoToke
 
 -- >>> test $ tokenize "(((a b)))"
 -- (a b)
+
+-- >>> test $ tokenize "((lambda a . b) 5)"
+-- ((λa.b) 5)
+
+-- >>> test $ tokenize "((lambda a . lambda b . 5) 8)"
+-- ((λa.(λb.5)) 8)
