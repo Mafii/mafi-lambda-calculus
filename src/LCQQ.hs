@@ -43,7 +43,7 @@ instance Show Token where
   show (VariableUsageOrBinding id) = "<var " ++ id ++ ">"
 
 parse' :: String -> Term
-parse' = undefined
+parse' = parse'' . tokenize
 
 -- parse' text = fromJust $ unwrap (interpret' (tokenize text)) NoTokens -- unwrap . readToEnd . interpret . tokenize
 
@@ -100,7 +100,7 @@ instance Show Ast where
   show (Application ast ast') = "(" ++ show ast ++ " " ++ show ast' ++ ")"
   show (Abstraction id ast) = "(λ" ++ id ++ "." ++ show ast ++ ")"
 
-data AbortReason = NoTokens | Parenthesis | Dot | MatchOnlyOneElement
+data AbortReason = NoTokens | Parenthesis | Dot | MatchOnlyOneElement AbortReason
   deriving (Show, Eq)
 
 type TakeUntil = AbortReason
@@ -135,33 +135,36 @@ parse''' [] until = if until == NoTokens then Success Empty [] else Abort NoToke
 parse''' (OpeningParenthesis : tokens) _ = parseParenthesisContent tokens
 parse''' (ClosingParenthesis : tokens) until = if until == Parenthesis then Success Empty tokens else Abort Parenthesis tokens
 parse''' (VariableUsageOrBinding id : tokens) until = extendResultUntil (Success (Variable id) tokens) until
-parse''' (LambdaCharacter : VariableUsageOrBinding id : FunctionAbstractionDot : tokens) until = createAbstraction id (extendResultUntil (parse''' tokens until) until)
+parse''' (LambdaCharacter : VariableUsageOrBinding id : FunctionAbstractionDot : tokens) until = parseFunctionAbstraction id tokens until
 parse''' ts r = error $ "parse error: unhandled case: " ++ show ts ++ show r
 
 parseParenthesisContent :: [Token] -> ParseResult
-parseParenthesisContent tokens = extendResultUntil (parse''' tokens MatchOnlyOneElement) Parenthesis
+parseParenthesisContent tokens = extendResultUntil (parse''' tokens (MatchOnlyOneElement Parenthesis)) Parenthesis
+
+parseFunctionAbstraction :: String -> [Token] -> TakeUntil -> ParseResult
+-- if the caller expects us to match only one element, we still need to take as much as we can as all right of the
+-- abstraction belongs to the abstraction
+parseFunctionAbstraction id tokens (MatchOnlyOneElement outerReason) = parseFunctionAbstraction id tokens outerReason
+parseFunctionAbstraction id tokens until = createAbstraction id (extendResultUntil (parse''' tokens (MatchOnlyOneElement until)) until)
 
 createAbstraction :: String -> ParseResult -> ParseResult
 createAbstraction id (Success ast tokens) = Success (Abstraction id ast) tokens
 createAbstraction _ e@(Abort _ _) = e
 
-resultToTerm :: ParseResult -> Term
-resultToTerm = undefined
-
 extendResultUntil :: ParseResult -> TakeUntil -> ParseResult
 extendResultUntil s@(Success ast []) until = s
-extendResultUntil s@(Success ast tokens) MatchOnlyOneElement = s
+extendResultUntil s@(Success ast tokens) (MatchOnlyOneElement _) = s
 extendResultUntil s@(Success ast tokens) until = createApplicationWithResultExtension s until s
 extendResultUntil e@(Abort _ _) until = error "undefined case" --if r == until then Success Empty [] else e
 
 -- ensures that (a b c) is interpreted as ((a b) c)
 -- this method may only call parse''' with MatchOnlyOneElement or it introduces a runtime bug
 createApplicationWithResultExtension :: ParseResult -> TakeUntil -> ParseResult -> ParseResult
-createApplicationWithResultExtension s@(Success ast tokens) MatchOnlyOneElement _ = error "undefined behaviour, bug in the parser"
+createApplicationWithResultExtension s@(Success ast tokens) (MatchOnlyOneElement _) _ = error "undefined behaviour, bug in the parser"
 createApplicationWithResultExtension s@(Success ast []) until _ = s
 createApplicationWithResultExtension s@(Success (Application _ Empty) tokens) _ _ = s
 createApplicationWithResultExtension s@(Success ast tokens) until _ =
-  createApplicationWithResultExtension (createApplication s (parse''' tokens MatchOnlyOneElement)) until s
+  createApplicationWithResultExtension (createApplication s (parse''' tokens (MatchOnlyOneElement until))) until s
 createApplicationWithResultExtension e@(Abort r leftovers) until previous@(Success ast _)
   | r == until = Success ast leftovers
   | otherwise = e
@@ -176,7 +179,25 @@ createApplication lhs@(Success ast _) rhs@(Success ast' tokens) = Success (Appli
 createApplication lhs@(Success ast tokens) rhs@(Abort reason leftovers) = rhs
 createApplication _ _ = error "unhandled parser case"
 
+resultToTerm :: ParseResult -> Term
+resultToTerm (Success ast []) = astToTerm ast
+resultToTerm (Success ast tokens) = error $ "unhandled tokens left over: " ++ show tokens
+resultToTerm (Abort r tokens) = error $ "Aborted in unhandled case: " ++ show r ++ " - left over tokens: " ++ show tokens
+
+astToTerm :: Ast -> Term
+astToTerm Empty = error "Empty ast represents nothing, should have been removed during parsing. Probably invalid input or a bug."
+astToTerm (Variable id) = Var id
+astToTerm (Application lhs rhs) = App (astToTerm lhs) (astToTerm rhs)
+astToTerm (Abstraction id body) = Abs id (astToTerm body)
+
 -- testing:
+
+-- >>> parse' "lambda a . a"
+-- >>> parse' "(((lambda a . a b)) 5)"
+-- (λa. a)
+-- (λa. a b) 5
+
+-- old test runs
 
 test :: [Token] -> ParseResult
 test it = parse''' (filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
