@@ -67,59 +67,6 @@ toExp (App term term') = do
   exp' <- toExp term'
   return $ TH.AppE (TH.AppE conE exp) exp'
 
--- >>> toExp $ App (Var "a") (Var "b")
--- AppE (AppE (ConE Lib.App) (AppE (ConE Lib.Var) (ListE [LitE (CharL 'a')]))) (AppE (ConE Lib.Var) (ListE [LitE (CharL 'b')]))
-
--- createExpression :: Term -> Q TH.Exp
--- createExpression v@(Var _) = createVarExpression v
--- createExpression abs@(Abs _ _) = createAbsExpression abs
--- createExpression app@(App _ _) = createAppExpression app
-
--- createVarExpression :: Term -> Q TH.Exp
--- createVarExpression (Var id) = [e|Var id|]
-
--- createAbsExpression :: Term -> Q TH.Exp
--- createAbsExpression (Abs id term) = do
---   exp <- createExpression term
---   [e|Abs id exp|]
---   where
---     lift (Abs a b) = [e|Abs a b|]
-
--- createAppExpression :: Term -> m Exp
--- createAppExpression (App term term') =
---   let exp = createExpression term
---       exp' = createExpression term'
---    in [e|App exp exp'|]
-
---instance Lift (Q TH.Exp Term) where
---  liftTyped (Var id) = [|Var id|]
---   liftTyped (Abs id term) = [|Abs id term|]
---   liftTyped (App term term') = [|App term term'|]
-
--- >>> :t createExpression (Var "a")
--- Could not deduce (Lift Term)
---   arising from a use of ‘createExpression’
--- from the context: Quote m
---   bound by the inferred type of it :: Quote m => m Exp
---   at <interactive>:1:1
-
---createExpression (Abs id term) = [|(Abs id (createExpression term))|]
---createExpression (App term term') =
---  let expr = createExpression term
---      expr' = createExpression term'
---   in [|App term term'|]
-
--- >>> :t [|(Abs id (createExpression (Var "a")))|]
--- [|(Abs id (createExpression (Var "a")))|] :: Quote m => m Exp
-
--- >>> createExpression (Var "abcd")
--- AppE (ConE Lib.Var) (ListE [LitE (CharL 'a'),LitE (CharL 'b'),LitE (CharL 'c'),LitE (CharL 'd')])
-
---createExpression term = do
---  x :: Exp <- TH.litE $ TH.StringL $ removeSpaces txt
---  y :: Exp <- [|Var|]
---  return $ TH.AppE y x
-
 parse' :: String -> Term
 parse' = parse'' . tokenize
 
