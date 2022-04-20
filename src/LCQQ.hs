@@ -133,7 +133,7 @@ wrapIntoParenthesis ts = OpeningParenthesis : ts ++ [ClosingParenthesis]
 -- TODO: ensure this is by design with types
 parse''' :: [Token] -> TakeUntil -> ParseResult
 parse''' [] until = if until == NoTokens then Success Empty [] else Abort NoTokens
-parse''' (OpeningParenthesis : tokens) until = extendResultUntil (parse''' tokens Parenthesis) until
+parse''' (OpeningParenthesis : tokens) until = parse''' tokens Parenthesis
 parse''' (ClosingParenthesis : tokens) until = if until == Parenthesis then Success Empty tokens else Abort Parenthesis
 parse''' (VariableUsageOrBinding id : tokens) until = extendResultUntil (Success (Variable id) tokens) until
 parse''' (LambdaCharacter : VariableUsageOrBinding id : FunctionAbstractionDot : tokens) until = createAbstraction id (extendResultUntil (parse''' tokens until) until)
@@ -151,7 +151,7 @@ extendResultUntil :: ParseResult -> TakeUntil -> ParseResult
 extendResultUntil s@(Success ast []) until = s
 extendResultUntil s@(Success ast tokens) MatchOnlyOneElement = s
 extendResultUntil s@(Success ast tokens) until = createApplicationWithResultExtension s until s
-extendResultUntil e@(Abort r) until = if r == until then Success Empty [] else e
+extendResultUntil e@(Abort r) until = error "undefined case" --if r == until then Success Empty [] else e
 extendResultUntil e@(OuterAbort r tokens) until = if r == until then Success Empty tokens else e
 
 -- ensures that (a b c) is interpreted as ((a b) c)
@@ -162,11 +162,11 @@ createApplicationWithResultExtension s@(Success ast []) until _ = s
 createApplicationWithResultExtension s@(Success (Application _ Empty) tokens) _ _ = s
 createApplicationWithResultExtension s@(Success ast tokens) until _ =
   createApplicationWithResultExtension (createApplication s (parse''' tokens MatchOnlyOneElement)) until s
-createApplicationWithResultExtension e@(OuterAbort r tokens) until _
-  | r == until = OuterAbort r tokens
-  | otherwise = e
+createApplicationWithResultExtension e@(OuterAbort r tokens) until previous@(Success ast _) = error "unused"
+  -- | r == until = Success Empty tokens
+  -- | otherwise = e
 createApplicationWithResultExtension e@(Abort r) until previous@(Success ast tokens)
-  | r == until = OuterAbort r tokens
+  | r == until = Success ast (drop 1 tokens)
   | otherwise = e
 -- createApplicationWithResultExtension e@(Abort r) until previous@(Success ast tokens) = if r == until then Success Empty tokens else e -- Success Empty tokens else e
 createApplicationWithResultExtension _ _ _ = error "unhandled parser case"
@@ -177,23 +177,29 @@ createApplication :: ParseResult -> ParseResult -> ParseResult
 createApplication lhs@(Success ast _) (Success Empty tokens) = Success ast tokens -- Application of any <ast> <- <empty> equals <ast>
 createApplication lhs@(Success ast _) rhs@(Success ast' tokens) = Success (Application ast ast') tokens
 createApplication lhs@(Success ast tokens) rhs@(Abort reason) = rhs
-createApplication _ _ = undefined
+createApplication _ _ = error "unhandled parser case"
 
--- >>> tokenize "(lambda a. lambda b . (b c)) 5"
--- >>> parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
--- [(,lambda,<space>,<var a>,<dot>,<space>,lambda,<space>,<var b>,<space>,<dot>,<space>,(,<var b>,<space>,<var c>,),),<space>,<var 5>]
--- <Success: (((λa.((λb.((b c) <empty>)) <empty>)) <empty>))Unhandled: [),),<var 5>,)]>
+-- testing:
 
--- Bug: (toplevel (sub)) (toplevel') becomes (toplevel (sub toplevel')) which is wrong
+test :: [Token] -> ParseResult
+test it = parse''' (filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
 
--- >>> tokenize "(top) (top') (top''')"
--- >>> parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
--- [(,<var top>,),<space>,(,<var top'>,),<space>,(,<var top'''>,)]
--- <Success: ((top <empty>))Unhandled: [),(,<var top'>,),(,<var top'''>,),)]>
+-- >>> tokenize "(lambda a. a b g) 5"
+-- >>> test it
+-- >>> tokenize "lambda a. a b g"
+-- >>> test it
+-- [(,lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,<var b>,<space>,<var g>,),<space>,<var 5>]
+-- (λa.(((a b) g) 5))
+-- [lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,<var b>,<space>,<var g>]
+-- (λa.((a b) g))
 
--- foldr instead of foldl like behaviour is the bug
+-- >>> tokenize "lambda a . (a b g)"
+-- >>> test it
+-- [lambda,<space>,<var a>,<space>,<dot>,<space>,(,<var a>,<space>,<var b>,<space>,<var g>,)]
+-- (λa.((a b) g))
 
--- >>> tokenize "lambda a. a b c 5"
--- >>> parse''' (filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
--- [lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,<var b>,<space>,<var c>,<space>,<var 5>]
--- (λa.(((a b) c) 5))
+-- >>> test $ tokenize "lambda a . a"
+-- (λa.a)
+
+-- >>> test $ tokenize "((a b) c)"
+-- <Success: ((a b)) - Unhandled: [<var c>,)]>
