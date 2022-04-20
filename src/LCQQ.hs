@@ -5,14 +5,24 @@
 -- Inspired by https://github.com/tweag/HaskellR/blob/ace283d47a89d680d03182461f4dba98da2ee042/inline-r/src/Language/R/QQ.hs
 module LCQQ (λ, lambda) where
 
-import Data.Char (isSpace)
-import Data.Maybe (fromJust)
-import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import Language.Haskell.TH (Exp (VarE), Q)
 import qualified Language.Haskell.TH.Lib as TH
 import Language.Haskell.TH.Quote (QuasiQuoter (..))
 import qualified Language.Haskell.TH.Syntax as TH
 import Lib (Id, Term (Abs, App, Var))
+import Tokenizer
+  ( Token
+      ( ClosingParenthesis,
+        FunctionAbstractionDot,
+        LambdaCharacter,
+        LambdaWord,
+        Newline,
+        OpeningParenthesis,
+        Space,
+        VariableUsageOrBinding
+      ),
+    tokenize,
+  )
 
 λ :: QuasiQuoter
 λ =
@@ -29,67 +39,19 @@ lambda = λ
 parse :: String -> Q TH.Exp
 parse = undefined
 
-data Token = OpeningParenthesis | ClosingParenthesis | LambdaCharacter | LambdaWord | VariableUsageOrBinding String | FunctionAbstractionDot | Space | Newline
-  deriving (Eq)
-
-instance Show Token where
-  show OpeningParenthesis = "("
-  show ClosingParenthesis = ")"
-  show FunctionAbstractionDot = "<dot>"
-  show LambdaCharacter = "λ"
-  show LambdaWord = "lambda"
-  show Space = "<space>"
-  show Newline = "<newline>"
-  show (VariableUsageOrBinding id) = "<var " ++ id ++ ">"
-
 parse' :: String -> Term
 parse' = parse'' . tokenize
-
-tokenize :: String -> [Token]
-tokenize text = tokenize' text []
-
-tokenize' :: String -> [Token] -> [Token]
-tokenize' "" xs = xs
--- character λ does not work, encoded variant must be used (but it works in (probably unicode that's why) strings)
--- if weird errors happen, add setLocaleEncoding utf8 to your code ahead of running this tokenizer
-tokenize' ('\955' : restOfString) tokens = tokenize' restOfString (tokens ++ [LambdaCharacter])
-tokenize' ('l' : 'a' : 'm' : 'b' : 'd' : 'a' : restOfString) tokens = tokenize' restOfString (tokens ++ [LambdaWord])
-tokenize' ('(' : restOfString) tokens = tokenize' restOfString (tokens ++ [OpeningParenthesis])
-tokenize' (')' : restOfString) tokens = tokenize' restOfString (tokens ++ [ClosingParenthesis])
-tokenize' ('.' : restOfString) tokens = tokenize' restOfString (tokens ++ [FunctionAbstractionDot])
-tokenize' (' ' : restOfString) tokens = tokenize' restOfString (tokens ++ [Space])
-tokenize' ('\n' : restOfString) tokens = tokenize' restOfString (tokens ++ [Newline])
-tokenize' (s : ss) [] = tokenize' ss [VariableUsageOrBinding [s]]
-tokenize' (s : ss) tokens =
-  tokenize'
-    ss
-    ( if isVariable (last tokens)
-        then init tokens ++ [appendCharToTokenText (last tokens) s]
-        else tokens ++ [VariableUsageOrBinding [s]]
-    )
-
-isVariable :: Token -> Bool
-isVariable (VariableUsageOrBinding _) = True
-isVariable _ = False
-
-appendCharToTokenText :: Token -> Char -> Token
-appendCharToTokenText (VariableUsageOrBinding t) c = VariableUsageOrBinding (t ++ [c])
-appendCharToTokenText _ _ = error "only defined for variables"
-
--- >>> setLocaleEncoding utf8
--- >>> tokenize "a"
--- >>> tokenize "λa. a b"
--- >>> tokenize "(λb . (λa. a b)) 5"
--- [<var a>]
--- [λ,<var a>,<dot>,<space>,<var a>,<space>,<var b>]
--- [(,λ,<var b>,<space>,<dot>,<space>,(,λ,<var a>,<dot>,<space>,<var a>,<space>,<var b>,),),<space>,<var 5>]
 
 -- BNF syntax (Variable, Function Abstraction, Application):
 -- <λexp> ::= <var>
 --          | λ<var> . <λexp>
 --          | ( <λexp> <λexp> )
 
-data Ast = Empty | Application Ast Ast | Abstraction String Ast | Variable String
+data Ast
+  = Empty
+  | Application Ast Ast
+  | Abstraction String Ast
+  | Variable String
   deriving (Eq)
 
 instance Show Ast where
@@ -98,12 +60,18 @@ instance Show Ast where
   show (Application ast ast') = "(" ++ show ast ++ " " ++ show ast' ++ ")"
   show (Abstraction id ast) = "(λ" ++ id ++ "." ++ show ast ++ ")"
 
-data AbortReason = NoTokens | Parenthesis | Dot | MatchOnlyOneElement AbortReason
+data AbortReason
+  = NoTokens
+  | Parenthesis
+  | Dot
+  | MatchOnlyOneElement AbortReason
   deriving (Show, Eq)
 
 type TakeUntil = AbortReason
 
-data ParseResult = Success Ast [Token] | Abort AbortReason [Token]
+data ParseResult
+  = Success Ast [Token]
+  | Abort AbortReason [Token]
 
 instance Show ParseResult where
   show (Success ast []) = show ast
