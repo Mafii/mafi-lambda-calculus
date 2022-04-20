@@ -111,6 +111,7 @@ instance Show TokenOrPartialAst where
   show (PartialAst ast) = show ast
 
 data GroupingResult = Grouping AbortReason (Maybe Term) [Token]
+  deriving (Show)
 data AbortReason = NoTokens | Parentesis | Dot
   deriving (Show, Eq)
 
@@ -142,30 +143,12 @@ ensureReasonOrThrow (Grouping r t ts) expected = if r == expected
   then Grouping r t ts
   else error $ "Aborted syntax parsing due to invalid syntax.  \n  Hint: Did you close all your parenthesis correctly?" ++ "\n  Expected abort reason: " ++ show expected ++ "\n  Actual abort reason" ++ show r
 
--- interpret (ClosingParenthesis: _) = Expression ClosingParenthesis
--- interpret [LambdaWord] = error "Invalid function expression"
--- interpret [LambdaCharacter] = error "Invalid function expression"
--- interpret (OpeningParenthesis: tokens) = getParanethesisContent tokens
--- interpret (ClosingParenthesis: tokens) = Expression [Closing]
--- interpret (LambdaCharacter: tokens) = getFunctionAbstractionContent tokens Empty
--- interpret (LambdaWord: tokens) = getFunctionAbstractionContent tokens Empty
--- interpret [VariableUsageOrBinding id] = VariableUsage id
--- interpret ((VariableUsageOrBinding id): tokens) = Expressions (VariableUsage id : [groupExpressions tokens])
--- interpret (Space: tokens) = groupExpressions tokens -- we simply ignore whitespace
--- interpret (Newline: tokens) = groupExpressions tokens -- we simply ignore whitespace
--- interpret _ = error "unhandled case, likely invalid syntax"
-
 getParanethesisContent :: [Token] -> GroupingResult
 getParanethesisContent tokens = interpret tokens Parentesis
 
 append :: PartialAst -> TokenOrPartialAst -> PartialAst
 append (Expression exp) token = Expression (exp ++ [token])
 append _ _ = error "Can only append token to expression"
-
--- >>> getParanethesisContent (tokenize "lambda a. a (b))") Empty
--- >>> getParanethesisContent (tokenize "a x (b))") Empty
--- WithoutRest ([lambda,<space>,<var a>,<dot>,<space>,<var a>,<space>,([<var b>])])
--- WithoutRest ([<var a>,<space>,<var x>,<space>,([<var b>])])
 
 getFunctionAbstractionContent :: [Token] -> AbortReason -> Maybe GroupingResult
 getFunctionAbstractionContent tokens outerAbortReason = 
@@ -178,12 +161,6 @@ getFunctionAbstractionContent tokens outerAbortReason =
      term <- getTermFromBody body
      let abs = Abs id term 
      Just $ Grouping outerAbortReason (Just $ Abs id term) rest
-
-
-  -- let actual = case ensureReasonOrThrow term Dot of (Var id) -> id
-  --                                                   term -> error "Error parsing function abstraction. Did you acidentially add multiple parameters? LC only allows for one parameter to its function abstractions. \n  Valid: λ a .<anything> \n  Also Valid: λa.a \n  Invalid: λa b.<anything>\n  Actual Term:" ++ show term 
-  -- let body = unwrap $ foldRest (interpret rest outerAbortReason) outerAbortReason
-  -- Ast $ App (Var actual) body
 
 getVarOrNothing :: Term -> Maybe Term
 getVarOrNothing (Var id) = Just $ Var id
@@ -203,85 +180,6 @@ getRestFromGrouping (Grouping _ _ ts) = ts
 getTermFromBody :: GroupingResult -> Maybe Term
 getTermFromBody (Grouping _ t _) = t
 
--- getFunctionAbstractionContent (FunctionAbstractionDot: tokens) (Expression tokensAndAsts) = Expression (tokensAndAsts ++ [PartialAst (groupExpressions tokens)])
--- getFunctionAbstractionContent ((VariableUsageOrBinding id): tokens) Empty = getFunctionAbstractionContent tokens (Expression [PartialAst $ FreeVariableDeclaration id])
--- getFunctionAbstractionContent (Space: tokens) Empty = getFunctionAbstractionContent tokens Empty -- we ignore whitespace here
--- getFunctionAbstractionContent (Space: tokens) (Expression tokensAndAsts) = getFunctionAbstractionContent tokens (Expression tokensAndAsts) -- we ignore whitespace here
--- getFunctionAbstractionContent _ _ = error "Error parsing function abstraction. Did you acidentially add multiple parameters? LC only allows for one parameter to its function abstractions. \n  Valid: λ a .<anything> \n  Also Valid: λa.a \n  Invalid: λa b.<anything>"
-
--- >>> parse' "lambda a . a "
--- ProgressCancelledException
-
-{- once partially working example leftover 
-
--- >>> (tokenize "a .(a)")
--- >>> getFunctionAbstractionContent it Empty
--- [<var a>,<space>,<dot>,(,<var a>,)]
--- ([λ.a,([<var a>])])
-
--- >>> setLocaleEncoding utf8 
--- >>> (tokenize "λa. a (b))")
--- [λ,<var a>,<dot>,<space>,<var a>,<space>,(,<var b>,),)]
-
--- interpret :: PartialAst -> Term
--- interpret Empty = error "Empty token list can not be interpreted"
--- interpret (VariableUsage id) = Var id
--- interpret (Expression (PartialAst (FreeVariableDeclaration id) : PartialAst body : rest)) = foldl App (Abs id (interpret body)) (map (interpret . forceOnlyAstOrThrow) rest)
---   where forceOnlyAstOrThrow :: TokenOrPartialAst -> PartialAst
---         forceOnlyAstOrThrow (PartialAst el) = el
---         forceOnlyAstOrThrow (Token t) = error $ "Unhandled token " ++ show t
--- interpret (Expression tokensAndAsts) = interpret' tokensAndAsts
--- interpret (Expressions [lhs,rhs]) = App (interpret lhs) (interpret rhs)
--- interpret (Expressions xs) = error $ "Maximum of 2 expressions can be at the same level (e.g. application of rhs to lhs), but there are" ++ show (length xs)
-
--- interpret (FreeVariableDeclaration id) = error $ "Can not have anonymous function declaration without body" ++ "\n  hint: The Variable declaration is similar to " ++ show (FreeVariableDeclaration id)
-
--- interpret' :: [TokenOrPartialAst] -> Term
--- interpret' [PartialAst (VariableUsage id)] = Var id
--- interpret' (PartialAst (VariableUsage id) : rest) = App (Var id) (interpret' rest)
--- -- interpret' [Token (VariableUsageOrBinding id)] = Var id
--- -- interpret' (Token (VariableUsageOrBinding id) : rest) = App (Var id) (interpret' rest)
--- interpret' thing = error $ "unexpected token or partial ast for application interpretation" ++ "\n  hint: '" ++ show thing ++ "'"
-
--- >>> parse' "a b c"
--- a b c
-
--- >>> parse' "λa.a"
--- (λa. a)
-
--- >>> parse' "λa.a a"
--- (λa. a a)
-
--- >>> parse' "λa. a xx ax xx"
--- (λa. a xx ax xx)
-
--- >>> parse' "λa. λb . a b"
--- >>> parse' "(λa. λb . a b)"
--- (λa. (λb. a b))
--- unexpected token or partial ast for application interpretation
---   hint: '[λ,<var a>,<dot>,λ,<var b>,<dot>,<var a>,<var b>]'
-
--- >>> :t (groupExpressions $ tokenize "(λa. λb . a b)")
--- (groupExpressions $ tokenize "(λa. λb . a b)") :: PartialAst
-
--}
-
-
--- leftovers:
--- working simple non-complete examples
-{-
--- pass in any variable name, get a correct Var Term expression returned
-parse' :: String -> Q TH.Exp
-parse' txt = do
-  x :: Exp <- TH.litE $ TH.StringL $ removeSpaces txt
-  y :: Exp <- [|Var|]
-  return $ TH.AppE y x
-
--- just returns a string literal as haskell expression
-parse'' :: String -> Q TH.Exp
-parse'' txt = do
-  return $ TH.LitE $ TH.StringL txt
-
-removeSpaces :: [Char] -> [Char]
-removeSpaces = filter (not . isSpace)
--}
+-- >>> tokenize "lambda a . ab"
+-- >>> -- interpret it NoTokens
+-- [lambda,<space>,<var a>,<space>,<dot>,<space>,<var a>]
