@@ -1,9 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
--- TODO: Disable
-{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 -- Inspired by https://github.com/tweag/HaskellR/blob/ace283d47a89d680d03182461f4dba98da2ee042/inline-r/src/Language/R/QQ.hs
 module LCQQ (λ, lambda) where
@@ -66,6 +63,9 @@ toExp (App term term') = do
   exp <- toExp term
   exp' <- toExp term'
   return $ TH.AppE (TH.AppE conE exp) exp'
+
+-- >>> toExp (parse' "lambda a. a b")
+-- AppE (AppE (ConE Lib.Abs) (ListE [LitE (CharL 'a')])) (AppE (AppE (ConE Lib.App) (AppE (ConE Lib.Var) (ListE [LitE (CharL 'a')]))) (AppE (ConE Lib.Var) (ListE [LitE (CharL 'b')])))
 
 parse' :: String -> Term
 parse' = parse'' . tokenize

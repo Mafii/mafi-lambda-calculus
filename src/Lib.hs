@@ -61,7 +61,8 @@ replaceVariableName id term newId
 
 instance Eq Term where
   (==) (Var lhs) (Var rhs) = lhs == rhs
-  (==) (Abs id term) (Abs id' term') = term == replaceVariableName id' term' id -- ensure alpha equivalence (semi-todo)
+  (==) (Abs id term) (Abs id' term') = term == term' && id == id'
+  --(==) (Abs id term) (Abs id' term') = term == replaceVariableName id' term' id -- ensure alpha equivalence (semi-todo)
   (==) (App lhs rhs) (App lhs' rhs') = lhs == lhs' && rhs == rhs'
   (==) _ _ = False
 
