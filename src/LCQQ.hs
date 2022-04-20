@@ -41,7 +41,7 @@ lambda :: QuasiQuoter
 lambda = λ
 
 parse :: String -> Q TH.Exp
-parse = undefined
+parse = toExp . parse'
 
 -- >>> :t [|Var "a"|]
 -- [|Var "a"|] :: Quote m => m Exp
