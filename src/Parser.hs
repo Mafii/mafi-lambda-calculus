@@ -72,6 +72,7 @@ data Abort = Abort
 data Done a = Done
   { done :: a
   }
+  deriving (Show)
 
 type Until = AbortReason
 
@@ -103,26 +104,13 @@ class (Monad m, ParseResult r) => ParserMonad m r where
   nextToken' :: m r -> m (Either Abort Token)
   tokens' :: m r -> m [Token]
 
-data Result a
-  = Partial (PartialResult a)
-  | Finished (Done a)
-  | Aborted Abort
-
-instance (Show a) => ParserMonad Result (PartialResult a) where
-  nextToken' (Partial p) = return $ nextToken p
-  nextToken' (Finished a) = return $ nextToken a
-  nextToken' (Aborted a) = return $ nextToken a
-  tokens' (Partial p) = return $ tokens p
-  tokens' (Finished a) = return $ tokens a
-  tokens' (Aborted a) = return $ tokens a
-
-getA :: PartialResult a -> a
-getA (PartialResult a tokens) = a
+data Result a = Ok a | Error AbortReason
+  deriving (Show)
 
 instance Monad Result where
-  (>>=) (Aborted a) f = Aborted a
-  (>>=) (Partial p) f = f $ getA p -- todo: incomplete
-  (>>=) (Finished (Done a)) f = f a
+  return = Ok
+  (>>=) (Ok a) f = f a
+  (>>=) (Error r) f = Error r
 
 instance Functor Result where
   fmap f ra = ra >>= return . f
@@ -134,28 +122,28 @@ instance Applicative Result where
     a <- ra
     pure $ f a
 
--- instance (ParseResult r) => ParserMonad (Result r) r
+-- manual tests to learn how to think about monads
 
--- (>>=) p@(P) = undefined
+testExample :: a -> [Token] -> Result (PartialResult a)
+testExample a b = Ok $ PartialResult a b
 
-{-
+resultValue :: Result (PartialResult Ast)
+resultValue = testExample (Var "a") [Lambda]
 
-instance Monad PResult where
-  return :: a -> PResult a
-  return = Success
-  (>>=) :: PResult a -> (a -> PResult b) -> PResult b
-  (>>=) (Finished a) f = f a
-  (>>=) (Part a tokens) f = f a
-  (>>=) (Error r tokens) _ = Error r
+getAstFromResult :: PartialResult Ast -> Ast
+getAstFromResult (PartialResult ast tkns) = ast
 
-instance Functor PResult where
-  fmap f ra = ra >>= return . f
+-- >>> :t (resultValue >>=)
+-- (resultValue >>=) :: (PartialResult Ast -> Result b) -> Result b
 
-instance Applicative PResult where
-  pure = return
-  (<*>) mapr ra = do
-    f <- mapr
-    a <- ra
-    pure $ f a
+-- >>> resultValue >>= return . getAstFromResult
+-- Ok (Var "a")
 
--}
+-- >>> Error NoTokens >>= return . getAstFromResult
+-- Error NoTokens
+
+-- >>> :t (Error NoTokens >>= return . getAstFromResult >>=)
+-- (Error NoTokens >>= return . getAstFromResult >>=) :: (Ast -> Result b) -> Result b
+
+-- >>> Error NoTokens >>= return . getAstFromResult >>= return . Done
+-- Error NoTokens
