@@ -80,13 +80,13 @@ data Ast
   | Application Ast Ast
   | Abstraction String Ast
   | Variable String
-  deriving (Eq)
+  deriving (Eq, Show)
 
-instance Show Ast where
-  show Empty = "<empty>"
-  show (Variable id) = id
-  show (Application ast ast') = "(" ++ show ast ++ " " ++ show ast' ++ ")"
-  show (Abstraction id ast) = "(λ" ++ id ++ "." ++ show ast ++ ")"
+-- instance Show Ast where
+--   show Empty = "<empty>"
+--   show (Variable id) = id
+--   show (Application ast ast') = "(" ++ show ast ++ " " ++ show ast' ++ ")"
+--   show (Abstraction id ast) = "(λ" ++ id ++ "." ++ show ast ++ ")"
 
 data AbortReason
   = NoTokens
@@ -139,22 +139,37 @@ parseFunctionAbstraction :: String -> [Token] -> TakeUntil -> ParseResult
 -- if the caller expects us to match only one element, we still need to take as much as we can as all right of the
 -- abstraction belongs to the abstraction
 parseFunctionAbstraction id tokens (MatchOnlyOneElement outerReason) = parseFunctionAbstraction id tokens outerReason
-parseFunctionAbstraction id tokens until = createAbstraction id (extendResultUntil (parse''' tokens (MatchOnlyOneElement until)) until)
+parseFunctionAbstraction id tokens until = createAbstraction id tokens until
 
-createAbstraction :: String -> ParseResult -> ParseResult
-createAbstraction id (Success ast tokens) = Success (Abstraction id ast) tokens
-createAbstraction _ e@(Abort _ _) = e
+-- BUG
+-- >>> parse' "(lambda a. a lambda b. a b) 5"
+-- (λa. a (λb. a b) 5)
+
+createAbstraction :: String -> [Token] -> TakeUntil -> ParseResult
+createAbstraction id tokens until = do
+  let (ast, tokens') = case parse''' tokens (MatchOnlyOneElement until) of
+        (Success ast tokens) -> (ast, tokens)
+        (Abort r l) -> error "abort"
+  let abst = Success (Abstraction id ast) tokens'
+  createApplicationWithResultExtension abst until abst
 
 extendResultUntil :: ParseResult -> TakeUntil -> ParseResult
 extendResultUntil s@(Success ast []) until = s
 extendResultUntil s@(Success ast tokens) (MatchOnlyOneElement _) = s
+-- error "needs fix: maybe pass parse''' tokens MatchOnlyOneElement or do somehting else" --(Success Empty tokens)
 extendResultUntil s@(Success ast tokens) until = createApplicationWithResultExtension s until s
-extendResultUntil e@(Abort _ _) until = error "undefined case" --if r == until then Success Empty [] else e
+extendResultUntil e@(Abort _ _) until = error "undefined case"
 
 -- ensures that (a b c) is interpreted as ((a b) c)
 -- this method may only call parse''' with MatchOnlyOneElement or it introduces a runtime bug
 createApplicationWithResultExtension :: ParseResult -> TakeUntil -> ParseResult -> ParseResult
 createApplicationWithResultExtension s@(Success ast tokens) (MatchOnlyOneElement _) _ = error "undefined behaviour, bug in the parser"
+createApplicationWithResultExtension s@(Success abs@(Abstraction id term) tokens) until _ = do
+  let nextTerm = parse''' tokens (MatchOnlyOneElement until)
+  let (tokens, newTerm) = case createApplicationWithResultExtension (createApplication (Success term tokens) nextTerm) until s of
+        Success ast tokens' -> (tokens', ast)
+        Abort r tokens' -> (if r == until then (tokens', term) else error "invalid parser case")
+  Success (Abstraction id newTerm) tokens
 createApplicationWithResultExtension s@(Success ast []) until _ = s
 createApplicationWithResultExtension s@(Success (Application _ Empty) tokens) _ _ = s
 createApplicationWithResultExtension s@(Success ast tokens) until _ =
@@ -190,6 +205,13 @@ astToTerm (Abstraction id body) = Abs id (astToTerm body)
 -- >>> parse' "(((lambda a . a b)) 5)"
 -- (λa. a)
 -- (λa. a b) 5
+
+-- bug investigation:
+
+-- >>> tokenize "(lambda a. b lambda d . e) c 5"
+-- >>> parse''' (wrapIntoParenthesis $ filterWhitespace $ replaceLambdaWordWithCharacter it) NoTokens
+-- [(,lambda,<space>,<var a>,<dot>,<space>,<var b>,<space>,lambda,<space>,<var d>,<space>,<dot>,<space>,<var e>,),<space>,<var c>,<space>,<var 5>]
+-- Variable "b"[λ,<var d>,<dot>,<var e>,),<var c>,<var 5>,)]
 
 -- old test runs
 

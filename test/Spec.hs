@@ -14,6 +14,8 @@ spec :: Spec
 spec = do
   let _ = setLocaleEncoding utf8
   describe "QuasiQuotes for LC" $ do
+    it "unicode lambda is equal to lambda" $
+      [λ| asdf |] == [lambda| asdf |]
     it "Creates Var correctly" $
       ([λ| x |] :: Term) `shouldBe` Var "x"
     it "lambda and unicode lambda behave the same" $
@@ -25,11 +27,11 @@ spec = do
     it "Creates nested lc term correctly" $
       ([λ| (λx. x λy. x y) 5 |] :: Term) `shouldBe` App (Abs "x" (App (Var "x") (Abs "y" (App (Var "x") (Var "y"))))) (Var "5")
 
--- do
---describe "QuasiQuotes for LC" $ do
--- it "QQ with unicode lambda is equal to lambda" $
---   [λ| asdf |] == [lambda| asdf |]
--- it "QQ returns LC Term" $
---   (Var "abcd") == [lambda| abcd |]
---return
---  ()
+-- >>> ([λ| (λx. x λy. x y) 5 |] :: Term) == App (Abs "x" (App (Var "x") (Abs "y" (App (Var "x") (Var "y"))))) (Var "5")
+-- False
+
+-- >>> :t [λ| (λx. x λy. x y) 5 |]
+-- ([λ| (λx. x λy. x y) 5 |]) :: Term
+
+-- >>> [λ| (λx. x λy. x y) 5 |]
+-- (λx. x (λy. x y) 5)

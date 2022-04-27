@@ -27,6 +27,7 @@ library
   exposed-modules:
       LCQQ
       Lib
+      Parser
       Tokenizer
   other-modules:
       Paths_mafi_lambda_calculus
