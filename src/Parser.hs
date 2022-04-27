@@ -1,12 +1,12 @@
-{-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# HLINT ignore "Use <$>" #-}
 {-# HLINT ignore "Use <&>" #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module Parser where
+module Parser (parse, Ast) where
 
 import qualified Data.Foldable (toList)
 import qualified Tokenizer
@@ -50,6 +50,7 @@ data Ast
   = Var String
   | Abs String Ast
   | App Ast Ast
+  | Empty
   deriving (Show)
 
 data AbortReason
@@ -69,41 +70,33 @@ data Abort = Abort
   }
   deriving (Show)
 
-data Done a = Done
-  { done :: a
-  }
-  deriving (Show)
-
 type Until = AbortReason
 
-class ParseResult result where
+class ParseResult result ast where
   nextToken :: result -> Either Abort Token
   tokens :: result -> [Token]
+  getAst :: result -> ast
 
-class (ParseResult result) => Extendable result where
-  extend :: PartialResult Ast -> Until -> result
+class (ParseResult result ast) => Extendable result ast where
+  extend :: PartialResult ast -> Until -> result
 
-instance (Show ast) => ParseResult (PartialResult ast) where
+instance (Show ast) => ParseResult (PartialResult ast) ast where
   nextToken (PartialResult ast []) = Left (Abort NoTokens [])
   nextToken (PartialResult ast (x : xs)) = Right x
   tokens = unhandledTokens
+  getAst (PartialResult ast []) = ast
+  getAst (PartialResult _ ts) = error "unhandled tokens"
 
-instance (Show ast) => Extendable (PartialResult ast) where
+instance (Show ast) => Extendable (PartialResult ast) ast where
   extend partialResult until = undefined
 
-instance (Show ast) => ParseResult (Done ast) where
-  nextToken = const $ Left (Abort NoTokens [])
-  tokens = const []
-
-instance ParseResult Abort where
+instance ParseResult Abort ast where
   nextToken (Abort r []) = Left (Abort NoTokens [])
   nextToken (Abort r (x : xs)) = Right x
   tokens = leftoverTokens
+  getAst = error "undhandled abort"
 
-class (Monad m, ParseResult r) => ParserMonad m r where
-  nextToken' :: m r -> m (Either Abort Token)
-  tokens' :: m r -> m [Token]
-
+-- basically something like a result or error monad
 data Result a = Ok a | Error AbortReason
   deriving (Show)
 
@@ -121,6 +114,19 @@ instance Applicative Result where
     f <- mapr
     a <- ra
     pure $ f a
+
+fromOk :: Result a -> a
+fromOk (Ok a) = a
+fromOk (Error r) = error $ show r
+
+parse :: [Tokenizer.Token] -> Ast
+parse ts = getAst $ fromOk $ parse' $ return $ PartialResult Empty (flatMapTokens ts)
+
+parse' :: Result (PartialResult Ast) -> Result (PartialResult Ast)
+parse' r = r >>= parse''
+
+parse'' :: PartialResult Ast -> Result (PartialResult Ast)
+parse'' = undefined
 
 -- manual tests to learn how to think about monads
 
