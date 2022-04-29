@@ -74,14 +74,14 @@ parseUntilDone app@(App lhs rhs) = parseUntilDone $ case rhs of
   Aborted result ScopeFinished tokens -> App app (parse' (Unhandled ScopeFinished tokens))
   el -> error $ "unhandled expansion " ++ show el
 parseUntilDone aborted@(Aborted result until []) = if until == ScopeFinished then result else error $ "missing closing parens" ++ show until ++ show result
-parseUntilDone aborted@(Aborted result ScopeFinished tokens)
+parseUntilDone aborted@(Aborted result r tokens)
   | trace ("parseUntilDone aborted scope finished: " ++ show result ++ show tokens) False = undefined
   | otherwise = do
-    let rhs = parseUntilDone $ parse' $ Unhandled ScopeFinished tokens
-    let discard = trace ("cont: ->" ++ show rhs) rhs
-    App result discard -- temp test
-  | otherwise = App result (parseUntilDone $ parse' $ Unhandled ScopeFinished tokens) -- createExpandable next (App result) tokens until
-parseUntilDone aborted@(Aborted result r tokens) = undefined -- parseUntilDone $ parse' aborted -- createExpandable next (App result) tokens until
+    let test = parse' $ Unhandled r tokens
+    let tracedTest = trace ("test: -> " ++ show test) test
+    let rhs = parseUntilDone tracedTest
+    let tracedRhs = trace ("cont: ->" ++ show rhs) rhs
+    App result tracedRhs
 
 parse' :: IntermediateParseResult -> IntermediateParseResult
 parse' val | (trace $ "parse' ->" ++ show val) False = undefined
@@ -110,8 +110,8 @@ handleExpandableLookForward nextElement factory until = do
   let creator el = Expandable (factory el)
   case nextElement of
     -- a@(Aborted result r@(Parenthesis n) (ClosingParens : tokens)) -> closeScope result r tokens
-    a@(Aborted result r@(Parenthesis n) tokens) -> Aborted result r tokens
-    a@(Aborted result ScopeFinished []) -> if until == ScopeFinished then result else error "missing parenthesis probably"
+    -- a@(Aborted result r@(Parenthesis n) tokens) -> Aborted result r tokens
+    a@(Aborted result reason tokens) -> if until == reason then creator result until tokens else error "missing parenthesis probably"
     (Expandable lhs until tokens) -> creator lhs until tokens
     a@(App {}) -> creator a until []
     a@(Abs {}) -> creator a until []
