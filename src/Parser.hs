@@ -1,14 +1,10 @@
-{-# HLINT ignore "Use newtype instead of data" #-}
-{-# HLINT ignore "Use <$>" #-}
-{-# HLINT ignore "Use <&>" #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# HLINT ignore "Avoid lambda" #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module Parser (parse, Ast) where
+module Parser (parse) where
 
-import qualified Data.Foldable (toList)
+import qualified Data.Foldable
+import Debug.Trace (trace)
 import qualified Tokenizer
   ( Token
       ( ClosingParenthesis,
@@ -46,111 +42,118 @@ mapToken Tokenizer.Newline = Nothing
 mapToken Tokenizer.Space = Nothing
 mapToken (Tokenizer.VariableUsageOrBinding id) = Just $ VarUseOrBind id
 
-data Ast
-  = Var String
-  | Abs String Ast
-  | App Ast Ast
-  | Empty
-  deriving (Show)
-
 data AbortReason
-  = NoTokens
-  | Parenthesis
-  deriving (Show)
+  = ScopeFinished
+  | Parenthesis Int
+  deriving (Show, Eq)
 
-data PartialResult a = PartialResult
-  { result :: a,
-    unhandledTokens :: [Token]
-  }
-  deriving (Show)
+data IntermediateParseResult
+  = Var String
+  | Abs String IntermediateParseResult
+  | App IntermediateParseResult IntermediateParseResult
+  | Expandable IntermediateParseResult AbortReason [Token]
+  | Aborted IntermediateParseResult AbortReason [Token]
+  | Unhandled AbortReason [Token]
 
-data Abort = Abort
-  { reason :: AbortReason,
-    leftoverTokens :: [Token]
-  }
-  deriving (Show)
+parse :: [Tokenizer.Token] -> IntermediateParseResult
+parse tokens = parseUntilDone (Unhandled ScopeFinished (flatMapTokens tokens))
 
-type Until = AbortReason
+parseUntilDone :: IntermediateParseResult -> IntermediateParseResult
+parseUntilDone val | trace "parseUntilDone" False = undefined
+parseUntilDone val@(Unhandled until tokens) = parseUntilDone (parse' val)
+parseUntilDone expandable@(Expandable result ScopeFinished []) = result
+parseUntilDone expandable@(Expandable {}) = parseUntilDone (parse' expandable)
+parseUntilDone abs@(Abs id rhs) = abs
+parseUntilDone var@(Var {}) = var
+parseUntilDone app@(App lhs rhs) = case rhs of
+  Abs id ex@(Expandable {}) -> App lhs (Abs id (parseUntilDone $ parse' ex))
+  App lhs' ex@(Expandable {}) -> App lhs (App lhs' (parseUntilDone $ parse' ex))
+  Var {} -> app
+  ex@(Expandable {}) -> App lhs (parseUntilDone $ parse' ex)
+  el -> error "unhandled expansion"
+parseUntilDone aborted@(Aborted result until []) = if until == ScopeFinished then result else error $ "missing closing parens" ++ show until ++ show result
+parseUntilDone aborted@(Aborted result ScopeFinished tokens) = parseUntilDone $ App result (parse' $ Unhandled ScopeFinished tokens) -- createExpandable next (App result) tokens until
+parseUntilDone aborted@(Aborted result r tokens) = parseUntilDone $ parse' aborted -- createExpandable next (App result) tokens until
 
-class ParseResult result ast where
-  nextToken :: result -> Either Abort Token
-  tokens :: result -> [Token]
-  getAst :: result -> ast
+parse' :: IntermediateParseResult -> IntermediateParseResult
+parse' val | trace "parse'" False = undefined
+parse' (Aborted result until (ClosingParens : tokens)) = closeScope result until tokens
+parse' (Expandable result until (ClosingParens : tokens)) = closeScope result until tokens
+parse' (Unhandled until (ClosingParens : tokens)) = closeScope (Unhandled ScopeFinished tokens) until tokens
+parse' (Aborted result until (next : tokens)) = createExpandable next (App result) tokens until
+parse' (Expandable result expandUntil (next : tokens)) = createExpandable next (createExpandFactory result) tokens expandUntil
+parse' (Unhandled until@(Parenthesis n) ((VarUseOrBind id) : ClosingParens : tokens)) = closeScope (Var id) until tokens
+parse' (Unhandled until (OpenParens : tokens)) = parse' (Unhandled (openScope until) tokens)
+parse' (Unhandled until (Lambda : (VarUseOrBind id) : Dot : next : tokens)) = createExpandable next (Abs id) tokens until
+parse' (Unhandled until ((VarUseOrBind id) : next : tokens)) = createExpandable next (createExpandFactory (Var id)) tokens until
+parse' (Unhandled until [VarUseOrBind id]) = Var id
+parse' _ = error "unhandled case"
 
-class (ParseResult result ast) => Extendable result ast where
-  extend :: PartialResult ast -> Until -> result
+createExpandable :: Token -> (IntermediateParseResult -> IntermediateParseResult) -> [Token] -> AbortReason -> IntermediateParseResult
+createExpandable a b c d | (trace $ "createExpandable " ++ show a ++ " -> " ++ show c) False = undefined
+createExpandable OpenParens factory tokens until = do
+  let nextElement = parse' $ Unhandled until (OpenParens : tokens)
+  let (tokens', element, until') = case nextElement of
+        a@(Aborted result (Parenthesis n) (ClosingParens : tokens)) -> (tokens, result, Parenthesis (n - 1))
+        (Expandable lhs until tokens) -> (tokens, lhs, until)
+        a@(App {}) -> ([], a, until)
+        a@(Abs {}) -> ([], a, until)
+        v@(Var {}) -> ([], v, until)
+        _ -> error "unhandled"
+  Expandable (factory element) until' tokens'
+createExpandable Lambda factory tokens until = handleExpandableLookForward (parse' (Unhandled until (Lambda : tokens))) factory until
+createExpandable (VarUseOrBind id) factory tokens until = Expandable (factory $ Var id) until tokens
+createExpandable tk f tks until = error $ "invalid syntax " ++ show tk ++ " " ++ show tks ++ " " ++ show until
 
-instance (Show ast) => ParseResult (PartialResult ast) ast where
-  nextToken (PartialResult ast []) = Left (Abort NoTokens [])
-  nextToken (PartialResult ast (x : xs)) = Right x
-  tokens = unhandledTokens
-  getAst (PartialResult ast []) = ast
-  getAst (PartialResult _ ts) = error "unhandled tokens"
+handleExpandableLookForward :: IntermediateParseResult -> (IntermediateParseResult -> IntermediateParseResult) -> AbortReason -> IntermediateParseResult
+handleExpandableLookForward nextElement factory until = do
+  let (tokens', element, until') = case nextElement of
+        a@(Aborted result (Parenthesis n) (ClosingParens : tokens)) -> (tokens, result, Parenthesis (n - 1))
+        (Expandable lhs until tokens) -> (tokens, lhs, until)
+        a@(App {}) -> ([], a, until)
+        a@(Abs {}) -> ([], a, until)
+        v@(Var {}) -> ([], v, until)
+        _ -> error "unhandled"
+  Expandable (factory element) until' tokens'
 
-instance (Show ast) => Extendable (PartialResult ast) ast where
-  extend partialResult until = undefined
+createExpandFactory :: IntermediateParseResult -> (IntermediateParseResult -> IntermediateParseResult)
+createExpandFactory a | trace "createExpandFactory" False = undefined
+createExpandFactory (Abs id rhs) = \new -> Abs id (App rhs new)
+createExpandFactory prev@(App lhs rhs) = \new -> App prev new
+createExpandFactory var@(Var id) = \new -> App var new
+createExpandFactory _ = error "unexpected value factory request"
 
-instance ParseResult Abort ast where
-  nextToken (Abort r []) = Left (Abort NoTokens [])
-  nextToken (Abort r (x : xs)) = Right x
-  tokens = leftoverTokens
-  getAst = error "undhandled abort"
+-- >>> parse $ Tokenizer.tokenize "(lambda a. (a b) 5) 5"
+-- (((λ a . (a b)) 5) 5)
 
--- basically something like a result or error monad
-data Result a = Ok a | Error AbortReason
-  deriving (Show)
+-- >>> parse $ Tokenizer.tokenize "lambda a . (lambda b . c) 5"
+-- >>> parse $ Tokenizer.tokenize "(a b) (c d)"
+-- ((λ a . (λ b . c)) 5)
+-- ((a b) (c d))
 
-instance Monad Result where
-  return = Ok
-  (>>=) (Ok a) f = f a
-  (>>=) (Error r) f = Error r
+-- >>> parse $ Tokenizer.tokenize "(a b) (c d e)"
+-- ((a b) (Expandable: ((c d) e) should take until: Parenthesis 1 leftovers: [ClosingParens]))
 
-instance Functor Result where
-  fmap f ra = ra >>= return . f
+openScopes :: AbortReason -> Int
+openScopes (Parenthesis n) = n
+openScopes r = 0
 
-instance Applicative Result where
-  pure = return
-  (<*>) mapr ra = do
-    f <- mapr
-    a <- ra
-    pure $ f a
+instance Show IntermediateParseResult where
+  show (Var id) = id
+  show (Abs id rhs) = "(λ " ++ id ++ " . " ++ show rhs ++ ")"
+  show (App lhs rhs) = "(" ++ show lhs ++ " " ++ show rhs ++ ")"
+  show (Expandable lhs until tokens) = "(Expandable: " ++ show lhs ++ " should take until: " ++ show until ++ " leftovers: " ++ show tokens ++ ")"
+  show (Aborted lhs until leftovers) = "(Aborted: " ++ show until ++ " " ++ show lhs ++ " leftovers: " ++ show leftovers ++ ")"
+  show (Unhandled until tokens) = "(Unhandled: " ++ show until ++ " tokens: " ++ show tokens ++ ")"
 
-fromOk :: Result a -> a
-fromOk (Ok a) = a
-fromOk (Error r) = error $ show r
+closeScope :: IntermediateParseResult -> AbortReason -> [Token] -> IntermediateParseResult
+closeScope innerResult expectedReason leftovers = do
+  let openScopes' = openScopes expectedReason
+  let reason = if openScopes' == 1 then ScopeFinished else Parenthesis (openScopes' - 1)
+  if openScopes' > 0
+    then Aborted innerResult reason leftovers
+    else error "unexpected closing parenthesis"
 
-parse :: [Tokenizer.Token] -> Ast
-parse ts = getAst $ fromOk $ parse' $ return $ PartialResult Empty (flatMapTokens ts)
-
-parse' :: Result (PartialResult Ast) -> Result (PartialResult Ast)
-parse' r = r >>= parse''
-
-parse'' :: PartialResult Ast -> Result (PartialResult Ast)
-parse'' (PartialResult ast (OpenParens : rest)) = undefined
-parse'' _ = undefined
-
--- manual tests to learn how to think about monads
-
-testExample :: a -> [Token] -> Result (PartialResult a)
-testExample a b = Ok $ PartialResult a b
-
-resultValue :: Result (PartialResult Ast)
-resultValue = testExample (Var "a") [Lambda]
-
-getAstFromResult :: PartialResult Ast -> Ast
-getAstFromResult (PartialResult ast tkns) = ast
-
--- >>> :t (resultValue >>=)
--- (resultValue >>=) :: (PartialResult Ast -> Result b) -> Result b
-
--- >>> resultValue >>= return . getAstFromResult
--- Ok (Var "a")
-
--- >>> Error NoTokens >>= return . getAstFromResult
--- Error NoTokens
-
--- >>> :t (Error NoTokens >>= return . getAstFromResult >>=)
--- (Error NoTokens >>= return . getAstFromResult >>=) :: (Ast -> Result b) -> Result b
-
--- >>> Error NoTokens >>= return . getAstFromResult >>= return . Done
--- Error NoTokens
+openScope :: AbortReason -> AbortReason
+openScope (Parenthesis n) = Parenthesis (n + 1)
+openScope ScopeFinished = Parenthesis 1

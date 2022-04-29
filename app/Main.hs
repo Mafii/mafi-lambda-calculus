@@ -1,7 +1,7 @@
 module Main where
 
-import FoldableParser (parse)
 import Lib
+import Parser (parse)
 import Tokenizer (tokenize)
 
 main :: IO ()

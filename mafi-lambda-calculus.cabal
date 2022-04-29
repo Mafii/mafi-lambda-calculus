@@ -25,7 +25,6 @@ source-repository head
 
 library
   exposed-modules:
-      FoldableParser
       LCQQ
       Lib
       Parser
