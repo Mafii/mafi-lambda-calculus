@@ -1,6 +1,16 @@
 module Main where
 
+import FoldableParser (parse)
 import Lib
+import Tokenizer (tokenize)
 
 main :: IO ()
-main = error "not done yet"
+main = do
+  putStrLn "Insert Term"
+  term <- getLine
+  let tokenized = tokenize term
+  putStrLn $ show tokenized
+  let parsed = parse tokenized
+  putStrLn $ show parsed
+  next <- main
+  putStrLn "Ciao"

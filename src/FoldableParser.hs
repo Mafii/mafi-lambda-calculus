@@ -1,9 +1,10 @@
+{-# HLINT ignore "Avoid lambda" #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-{-# HLINT ignore "Avoid lambda" #-}
-module FoldableParser where
+module FoldableParser (parse) where
 
 import qualified Data.Foldable
+import Debug.Trace (trace)
 import qualified Tokenizer
   ( Token
       ( ClosingParenthesis,
@@ -58,16 +59,24 @@ parse :: [Tokenizer.Token] -> IntermediateParseResult
 parse tokens = parseUntilDone (Unhandled ScopeFinished (flatMapTokens tokens))
 
 parseUntilDone :: IntermediateParseResult -> IntermediateParseResult
+parseUntilDone val | (trace $ show val) False = undefined
 parseUntilDone val@(Unhandled until tokens) = parseUntilDone (parse' val)
 parseUntilDone expandable@(Expandable result ScopeFinished []) = result
 parseUntilDone expandable@(Expandable {}) = parseUntilDone (parse' expandable)
-parseUntilDone abs@(Abs {}) = abs
+parseUntilDone abs@(Abs id rhs) = abs
 parseUntilDone var@(Var {}) = var
-parseUntilDone app@(App {}) = app
-parseUntilDone aborted@(Aborted result until (next : tokens)) = parseUntilDone $ parse' aborted -- createExpandable next (App result) tokens until
+parseUntilDone app@(App lhs rhs) = case rhs of
+  Abs id ex@(Expandable {}) -> App lhs (Abs id (parseUntilDone $ parse' ex))
+  App lhs' ex@(Expandable {}) -> App lhs (App lhs' (parseUntilDone $ parse' ex))
+  Var {} -> app
+  ex@(Expandable {}) -> App lhs (parseUntilDone $ parse' ex)
+  el -> error "unhandled expansion"
 parseUntilDone aborted@(Aborted result until []) = if until == ScopeFinished then result else error $ "missing closing parens" ++ show until ++ show result
+parseUntilDone aborted@(Aborted result ScopeFinished tokens) = parseUntilDone $ App result (parse' $ Unhandled ScopeFinished tokens) -- createExpandable next (App result) tokens until
+parseUntilDone aborted@(Aborted result r tokens) = parseUntilDone $ parse' aborted -- createExpandable next (App result) tokens until
 
 parse' :: IntermediateParseResult -> IntermediateParseResult
+parse' val | (trace $ show val) False = undefined
 parse' (Aborted result until (ClosingParens : tokens)) = closeScope result until tokens
 parse' (Expandable result until (ClosingParens : tokens)) = closeScope result until tokens
 parse' (Unhandled until (ClosingParens : tokens)) = closeScope (Unhandled ScopeFinished tokens) until tokens
@@ -81,6 +90,7 @@ parse' (Unhandled until [VarUseOrBind id]) = Var id
 parse' _ = error "unhandled case"
 
 createExpandable :: Token -> (IntermediateParseResult -> IntermediateParseResult) -> [Token] -> AbortReason -> IntermediateParseResult
+createExpandable a b c d | (trace $ show a ++ show c ++ show d) False = undefined
 createExpandable OpenParens factory tokens until = do
   let nextElement = parse' $ Unhandled until (OpenParens : tokens)
   let (tokens', element, until') = case nextElement of
@@ -93,9 +103,10 @@ createExpandable OpenParens factory tokens until = do
   Expandable (factory element) until' tokens'
 createExpandable Lambda factory tokens until = Expandable (factory $ parse' (Unhandled until (Lambda : tokens))) until tokens
 createExpandable (VarUseOrBind id) factory tokens until = Expandable (factory $ Var id) until tokens
-createExpandable tk f tks until = error $ "invalid syntax " ++ show tk ++ show tks ++ show until
+createExpandable tk f tks until = error $ "invalid syntax " ++ show tk ++ " " ++ show tks ++ " " ++ show until
 
 createExpandFactory :: IntermediateParseResult -> (IntermediateParseResult -> IntermediateParseResult)
+createExpandFactory a | (trace $ show a) False = undefined
 createExpandFactory (Abs id rhs) = \new -> Abs id (App rhs new)
 createExpandFactory prev@(App lhs rhs) = \new -> App prev new
 createExpandFactory var@(Var id) = \new -> App var new
@@ -103,6 +114,14 @@ createExpandFactory _ = error "unexpected value factory request"
 
 -- >>> parse $ Tokenizer.tokenize "(lambda a. (a b) 5) 5"
 -- (((λ a . (a b)) 5) 5)
+
+-- >>> parse $ Tokenizer.tokenize "lambda a . (lambda b . c) 5"
+-- >>> parse $ Tokenizer.tokenize "(a b) (c d)"
+-- ((λ a . (λ b . c)) 5)
+-- ((a b) (c d))
+
+-- >>> parse $ Tokenizer.tokenize "(a b) (c d e)"
+-- ((a b) (Expandable: ((c d) e) should take until: Parenthesis 1 leftovers: [ClosingParens]))
 
 openScopes :: AbortReason -> Int
 openScopes (Parenthesis n) = n

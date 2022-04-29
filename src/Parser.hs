@@ -127,8 +127,7 @@ parse' r = r >>= parse''
 
 parse'' :: PartialResult Ast -> Result (PartialResult Ast)
 parse'' (PartialResult ast (OpenParens : rest)) = undefined
-
-createApplication
+parse'' _ = undefined
 
 -- manual tests to learn how to think about monads
 
