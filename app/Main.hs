@@ -6,11 +6,15 @@ import Tokenizer (tokenize)
 
 main :: IO ()
 main = do
-  putStrLn "Insert Term"
+  putStrLn "\ESC[92mInsert Term" -- gree color
   term <- getLine
+  putStr "\ESC[0mDebug trace:" -- default color
   let tokenized = tokenize term
-  putStrLn $ show tokenized
+  print tokenized
   let parsed = parse tokenized
-  putStrLn $ show parsed
-  next <- main
-  putStrLn "Ciao"
+  let test = parsed
+  print test -- writes the debug trace + the print into the console
+  putStrLn "\ESC[33mResult:" -- yellow
+  print test -- writes the colored result into the console
+  main >>= print
+  putStrLn "Ciao (you will never see this)"

@@ -65,56 +65,58 @@ parseUntilDone expandable@(Expandable result ScopeFinished []) = result
 parseUntilDone expandable@(Expandable {}) = parseUntilDone (parse' expandable)
 parseUntilDone abs@(Abs id rhs) = abs
 parseUntilDone var@(Var {}) = var
-parseUntilDone app@(App lhs rhs) = case rhs of
-  Abs id ex@(Expandable {}) -> App lhs (Abs id (parseUntilDone $ parse' ex))
-  App lhs' ex@(Expandable {}) -> App lhs (App lhs' (parseUntilDone $ parse' ex))
+parseUntilDone app@(App lhs rhs) = parseUntilDone $ case rhs of
+  Abs id ex@(Expandable {}) -> App lhs (Abs id (parse' ex))
+  App lhs' ex@(Expandable {}) -> App lhs (App lhs' (parse' ex))
   Var {} -> app
-  ex@(Expandable {}) -> App lhs (parseUntilDone $ parse' ex)
-  el -> error "unhandled expansion"
+  ex@(Expandable {}) -> App lhs (parse' ex)
+  Aborted result ScopeFinished [] -> result
+  Aborted result ScopeFinished tokens -> App app (parse' (Unhandled ScopeFinished tokens))
+  el -> error $ "unhandled expansion " ++ show el
 parseUntilDone aborted@(Aborted result until []) = if until == ScopeFinished then result else error $ "missing closing parens" ++ show until ++ show result
-parseUntilDone aborted@(Aborted result ScopeFinished tokens) = parseUntilDone $ App result (parse' $ Unhandled ScopeFinished tokens) -- createExpandable next (App result) tokens until
-parseUntilDone aborted@(Aborted result r tokens) = parseUntilDone $ parse' aborted -- createExpandable next (App result) tokens until
+parseUntilDone aborted@(Aborted result ScopeFinished tokens)
+  | trace ("parseUntilDone aborted scope finished: " ++ show result ++ show tokens) False = undefined
+  | otherwise = do
+    let rhs = parseUntilDone $ parse' $ Unhandled ScopeFinished tokens
+    let discard = trace ("cont: ->" ++ show rhs) rhs
+    App result discard -- temp test
+  | otherwise = App result (parseUntilDone $ parse' $ Unhandled ScopeFinished tokens) -- createExpandable next (App result) tokens until
+parseUntilDone aborted@(Aborted result r tokens) = undefined -- parseUntilDone $ parse' aborted -- createExpandable next (App result) tokens until
 
 parse' :: IntermediateParseResult -> IntermediateParseResult
-parse' val | trace "parse'" False = undefined
+parse' val | (trace $ "parse' ->" ++ show val) False = undefined
 parse' (Aborted result until (ClosingParens : tokens)) = closeScope result until tokens
 parse' (Expandable result until (ClosingParens : tokens)) = closeScope result until tokens
 parse' (Unhandled until (ClosingParens : tokens)) = closeScope (Unhandled ScopeFinished tokens) until tokens
 parse' (Aborted result until (next : tokens)) = createExpandable next (App result) tokens until
 parse' (Expandable result expandUntil (next : tokens)) = createExpandable next (createExpandFactory result) tokens expandUntil
 parse' (Unhandled until@(Parenthesis n) ((VarUseOrBind id) : ClosingParens : tokens)) = closeScope (Var id) until tokens
+-- parse' (Unhandled until@(Parenthesis n) (OpenParens : (VarUseOrBind id) : tokens)) = undefined
 parse' (Unhandled until (OpenParens : tokens)) = parse' (Unhandled (openScope until) tokens)
 parse' (Unhandled until (Lambda : (VarUseOrBind id) : Dot : next : tokens)) = createExpandable next (Abs id) tokens until
 parse' (Unhandled until ((VarUseOrBind id) : next : tokens)) = createExpandable next (createExpandFactory (Var id)) tokens until
-parse' (Unhandled until [VarUseOrBind id]) = Var id
-parse' _ = error "unhandled case"
+parse' (Unhandled ScopeFinished [VarUseOrBind id]) = Var id
+parse' val = error $ "unhandled case" ++ show val
 
 createExpandable :: Token -> (IntermediateParseResult -> IntermediateParseResult) -> [Token] -> AbortReason -> IntermediateParseResult
 createExpandable a b c d | (trace $ "createExpandable " ++ show a ++ " -> " ++ show c) False = undefined
-createExpandable OpenParens factory tokens until = do
-  let nextElement = parse' $ Unhandled until (OpenParens : tokens)
-  let (tokens', element, until') = case nextElement of
-        a@(Aborted result (Parenthesis n) (ClosingParens : tokens)) -> (tokens, result, Parenthesis (n - 1))
-        (Expandable lhs until tokens) -> (tokens, lhs, until)
-        a@(App {}) -> ([], a, until)
-        a@(Abs {}) -> ([], a, until)
-        v@(Var {}) -> ([], v, until)
-        _ -> error "unhandled"
-  Expandable (factory element) until' tokens'
+createExpandable OpenParens factory tokens until = handleExpandableLookForward (parse' $ Unhandled until (OpenParens : tokens)) factory until
 createExpandable Lambda factory tokens until = handleExpandableLookForward (parse' (Unhandled until (Lambda : tokens))) factory until
 createExpandable (VarUseOrBind id) factory tokens until = Expandable (factory $ Var id) until tokens
 createExpandable tk f tks until = error $ "invalid syntax " ++ show tk ++ " " ++ show tks ++ " " ++ show until
 
 handleExpandableLookForward :: IntermediateParseResult -> (IntermediateParseResult -> IntermediateParseResult) -> AbortReason -> IntermediateParseResult
 handleExpandableLookForward nextElement factory until = do
-  let (tokens', element, until') = case nextElement of
-        a@(Aborted result (Parenthesis n) (ClosingParens : tokens)) -> (tokens, result, Parenthesis (n - 1))
-        (Expandable lhs until tokens) -> (tokens, lhs, until)
-        a@(App {}) -> ([], a, until)
-        a@(Abs {}) -> ([], a, until)
-        v@(Var {}) -> ([], v, until)
-        _ -> error "unhandled"
-  Expandable (factory element) until' tokens'
+  let creator el = Expandable (factory el)
+  case nextElement of
+    -- a@(Aborted result r@(Parenthesis n) (ClosingParens : tokens)) -> closeScope result r tokens
+    a@(Aborted result r@(Parenthesis n) tokens) -> Aborted result r tokens
+    a@(Aborted result ScopeFinished []) -> if until == ScopeFinished then result else error "missing parenthesis probably"
+    (Expandable lhs until tokens) -> creator lhs until tokens
+    a@(App {}) -> creator a until []
+    a@(Abs {}) -> creator a until []
+    v@(Var {}) -> creator v until []
+    val -> error $ "unhandled forward look case: " ++ show val
 
 createExpandFactory :: IntermediateParseResult -> (IntermediateParseResult -> IntermediateParseResult)
 createExpandFactory a | trace "createExpandFactory" False = undefined
