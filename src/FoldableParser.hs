@@ -81,7 +81,16 @@ parse' (Unhandled until [VarUseOrBind id]) = Var id
 parse' _ = error "unhandled case"
 
 createExpandable :: Token -> (IntermediateParseResult -> IntermediateParseResult) -> [Token] -> AbortReason -> IntermediateParseResult
-createExpandable OpenParens factory tokens until = Expandable (factory $ parse' (Unhandled (openScope until) tokens)) until tokens
+createExpandable OpenParens factory tokens until = do
+  let nextElement = parse' $ Unhandled until (OpenParens : tokens)
+  let (tokens', element, until') = case nextElement of
+        a@(Aborted result (Parenthesis n) (ClosingParens : tokens)) -> (tokens, result, Parenthesis (n - 1))
+        (Expandable lhs until tokens) -> (tokens, lhs, until)
+        a@(App {}) -> ([], a, until)
+        a@(Abs {}) -> ([], a, until)
+        v@(Var {}) -> ([], v, until)
+        _ -> error "unhandled"
+  Expandable (factory element) until' tokens'
 createExpandable Lambda factory tokens until = Expandable (factory $ parse' (Unhandled until (Lambda : tokens))) until tokens
 createExpandable (VarUseOrBind id) factory tokens until = Expandable (factory $ Var id) until tokens
 createExpandable tk f tks until = error $ "invalid syntax " ++ show tk ++ show tks ++ show until
@@ -92,8 +101,8 @@ createExpandFactory prev@(App lhs rhs) = \new -> App prev new
 createExpandFactory var@(Var id) = \new -> App var new
 createExpandFactory _ = error "unexpected value factory request"
 
--- >>> parse $ Tokenizer.tokenize "((a) b c)"
--- ((a b) c)
+-- >>> parse $ Tokenizer.tokenize "(lambda a. (a b) 5) 5"
+-- (((λ a . (a b)) 5) 5)
 
 openScopes :: AbortReason -> Int
 openScopes (Parenthesis n) = n
