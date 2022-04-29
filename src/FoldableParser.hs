@@ -64,15 +64,16 @@ parseUntilDone expandable@(Expandable {}) = parseUntilDone (parse' expandable)
 parseUntilDone abs@(Abs {}) = abs
 parseUntilDone var@(Var {}) = var
 parseUntilDone app@(App {}) = app
-parseUntilDone aborted@(Aborted result until (next : tokens)) = parseUntilDone $ createExpandable next (App result) tokens until
-parseUntilDone aborted@(Aborted result until []) = if until == ScopeFinished then result else error "missing closing parens"
+parseUntilDone aborted@(Aborted result until (next : tokens)) = parseUntilDone $ parse' aborted -- createExpandable next (App result) tokens until
+parseUntilDone aborted@(Aborted result until []) = if until == ScopeFinished then result else error $ "missing closing parens" ++ show until ++ show result
 
 parse' :: IntermediateParseResult -> IntermediateParseResult
 parse' (Aborted result until (ClosingParens : tokens)) = closeScope result until tokens
 parse' (Expandable result until (ClosingParens : tokens)) = closeScope result until tokens
+parse' (Unhandled until (ClosingParens : tokens)) = closeScope (Unhandled ScopeFinished tokens) until tokens
 parse' (Aborted result until (next : tokens)) = createExpandable next (App result) tokens until
 parse' (Expandable result expandUntil (next : tokens)) = createExpandable next (createExpandFactory result) tokens expandUntil
-parse' (Unhandled until@(Parenthesis n) ((VarUseOrBind id) : ClosingParens : tokens)) = Aborted (Var id) (openScope until) tokens
+parse' (Unhandled until@(Parenthesis n) ((VarUseOrBind id) : ClosingParens : tokens)) = closeScope (Var id) until tokens
 parse' (Unhandled until (OpenParens : tokens)) = parse' (Unhandled (openScope until) tokens)
 parse' (Unhandled until (Lambda : (VarUseOrBind id) : Dot : next : tokens)) = createExpandable next (Abs id) tokens until
 parse' (Unhandled until ((VarUseOrBind id) : next : tokens)) = createExpandable next (createExpandFactory (Var id)) tokens until
@@ -91,8 +92,8 @@ createExpandFactory prev@(App lhs rhs) = \new -> App prev new
 createExpandFactory var@(Var id) = \new -> App var new
 createExpandFactory _ = error "unexpected value factory request"
 
--- >>> parse $ Tokenizer.tokenize "((a))"
--- invalid syntax ClosingParens[]Parenthesis 3
+-- >>> parse $ Tokenizer.tokenize "((a) b c)"
+-- ((a b) c)
 
 openScopes :: AbortReason -> Int
 openScopes (Parenthesis n) = n
