@@ -42,14 +42,9 @@ mapToken Tokenizer.Newline = Nothing
 mapToken Tokenizer.Space = Nothing
 mapToken (Tokenizer.VariableUsageOrBinding id) = Just $ VarUseOrBind id
 
-data AbortReason
-  = ScopeFinished
-  | Parenthesis Int
-  deriving (Show, Eq)
-
 data TokenOrScope
   = T Token
-  | Scope TokenOrScope
+  | Scope [TokenOrScope]
   deriving (Show)
 
 data IntermediateParseResult
@@ -88,7 +83,12 @@ parse tokens =
 
 ensureComplete :: ([TokenOrScope], [TokenOrScope]) -> [TokenOrScope]
 ensureComplete (tokens, []) = tokens
-ensureComplete (_, existing) = error $ "Scope creation error. Unhandled: " ++ show existing
+ensureComplete (firstScope, unhandled) = do
+  let (nextScope, unhandled') = takeFirstScope unhandled
+  ensureComplete ([Scope firstScope, Scope nextScope], unhandled')
+
+-- >>> ensureComplete $ takeFirstScope $ generalize $ flatMapTokens $ Tokenizer.tokenize "(a b c) d"
+-- [Scope [T (VarUseOrBind "a"),T (VarUseOrBind "b"),T (VarUseOrBind "c")],Scope [T (VarUseOrBind "d")]]
 
 generalize :: [Token] -> [TokenOrScope]
 generalize = map T
@@ -137,8 +137,8 @@ noopExtender i = Extender (Intermediate i) (\x y -> error "can not extend furthe
 
 getFirstElement :: [TokenOrScope] -> Extender
 getFirstElement x | trace ("getFirstElement: " ++ show x) False = undefined
-getFirstElement ((Scope inner) : tokens) = appExtender (parse' $ Unhandled [inner])
-getFirstElement (T Lambda : (T (VarUseOrBind id)) : tokens) = absExtender (Extendable (E (Abs id Nothing) tokens))
+getFirstElement ((Scope inner) : tokens) = appExtender (parse' $ Unhandled inner)
+getFirstElement (T Lambda : (T (VarUseOrBind id)) : T Dot : tokens) = absExtender (Extendable (E (Abs id Nothing) tokens))
 getFirstElement (T (VarUseOrBind id) : tokens) = appExtender (Extendable (E (Var id) tokens))
 getFirstElement val = error $ "Unhandled (possibly invalid) sequence: " ++ show val
 
