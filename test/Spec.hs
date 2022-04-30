@@ -26,12 +26,19 @@ spec = do
       ([λ| λx. x λy. x y |] :: Term) `shouldBe` Abs "x" (App (Var "x") (Abs "y" (App (Var "x") (Var "y"))))
     it "Creates nested lc term correctly" $
       ([λ| (λx. x λy. x y) 5 |] :: Term) `shouldBe` App (Abs "x" (App (Var "x") (Abs "y" (App (Var "x") (Var "y"))))) (Var "5")
+    it "Nested Parenthesis are handled correctly" $
+      ([λ| (a (b) c) |] :: Term) `shouldBe` App (App (Var "a") (Var "b")) (Var "c")
 
 -- >>> ([λ| (λx. x λy. x y) 5 |] :: Term) == App (Abs "x" (App (Var "x") (Abs "y" (App (Var "x") (Var "y"))))) (Var "5")
 -- False
 
+-- >>> ([λ| (λx. x λy. x y) 5 |] :: Term)
+
 -- >>> :t [λ| (λx. x λy. x y) 5 |]
--- ([λ| (λx. x λy. x y) 5 |]) :: Term
+-- [λ| (λx. x λy. x y) 5 |] :: Term
 
 -- >>> [λ| (λx. x λy. x y) 5 |]
 -- (λx. x (λy. x y) 5)
+
+-- >>> ([λ| (a (b) c) |] :: Term) == App (App (Var "a") (Var "b")) (Var "c")
+-- True

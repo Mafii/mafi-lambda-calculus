@@ -73,7 +73,8 @@ instance Eq Term where
 instance Show Term where
   show (Var v) = v
   show (Abs id term) = "(λ" ++ id ++ ". " ++ show term ++ ")"
-  show (App term term') = show term ++ " " ++ show term'
+  -- show (App term term') = show term ++ " " ++ show term'
+  show (App term term') = "(" ++ show term ++ " " ++ show term' ++ ")" -- easier to argue about
 
 -- >>> (Var "x")
 -- >>> (Abs "y" (Var "y"))

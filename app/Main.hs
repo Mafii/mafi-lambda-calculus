@@ -14,7 +14,7 @@ main = do
   let parsed = parse tokenized
   let test = parsed
   print test -- writes the debug trace + the print into the console
-  putStrLn "\ESC[33mResult:" -- yellow
+  putStrLn $ "\ESC[33mResult for '" ++ term ++ "':" -- yellow
   print test -- writes the colored result into the console
   main >>= print
   putStrLn "Ciao (you will never see this)"
