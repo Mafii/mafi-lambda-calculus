@@ -50,9 +50,9 @@ data TokenOrScope
 
 data IntermediateParseResult
   = Var String
-  | Abs String (Maybe IntermediateParseResult)
-  | App IntermediateParseResult IntermediateParseResult
-  | AppPC CompletedParseResult IntermediateParseResult
+  | Abs String (Maybe (Either CompletedParseResult IntermediateParseResult))
+  | App IntermediateParseResult (Either CompletedParseResult IntermediateParseResult)
+  | AppPC CompletedParseResult (Either CompletedParseResult IntermediateParseResult)
   deriving (Show)
 
 data CompletedParseResult
@@ -78,11 +78,19 @@ parse tokens =
     ensureCompleted $
       parse' $
         Unhandled $
-          createLambdaScopes $
-            ensureComplete $
-              takeFirstScope $
-                generalize $
-                  flatMapTokens tokens
+          removeEmptyScopes $
+            createLambdaScopes $
+              ensureComplete $
+                takeFirstScope $
+                  generalize $
+                    flatMapTokens tokens
+
+removeEmptyScopes :: [TokenOrScope] -> [TokenOrScope]
+removeEmptyScopes = concatMap (Data.Foldable.toList . f)
+  where
+    f (T el) = Just $ T el
+    f (Scope []) = Nothing
+    f (Scope s) = Just $ Scope $ removeEmptyScopes s
 
 createLambdaScopes :: [TokenOrScope] -> [TokenOrScope]
 createLambdaScopes els = fromFinished $ ensureResult $ createLambdaScopes' $ Empty els
@@ -147,7 +155,7 @@ parse' val = error $ "could not parse: " ++ show val
 
 data Extender = Extender
   { original :: ParseResult,
-    extendf :: IntermediateParseResult -> [TokenOrScope] -> ParseResult
+    extendf :: Either CompletedParseResult IntermediateParseResult -> [TokenOrScope] -> ParseResult
   }
 
 unpack :: Extender -> ParseResult
@@ -174,15 +182,21 @@ extend input = do
         Extender (Completed el) f -> (Left el, [])
         Extender (Intermediate i) _ -> (Right i, [])
         val -> error $ "unhandled extnext" ++ show (original val)
-  let result = case newEl of
-        (Right newEl) -> f newEl newRest
-        (Left closedEl) -> Extendable (Closed (Left $ AppC (either id (error "unexpected right") r) closedEl) newRest)
+  let result = case r of
+        (Left lhs) -> case newEl of
+          (Left rhs) -> Extendable (Closed (Left $ AppC lhs rhs) newRest)
+          (Right rhs) -> f (Right rhs) newRest
+        (Right lhs) -> case newEl of
+          (Left rhs) -> Extendable (E (App lhs (Left rhs)) newRest)
+          (Right rhs) -> f (Right rhs) newRest
   let extender = case r of
         Right (Var id) -> appExtender
         Right (Abs id rhs) -> absExtender
         Right (App lhs rhs) -> appExtender
         Right (AppPC lhs rhs) -> appExtender
-        Left el -> appExtender
+        Left (AppC lhs rhs) -> appExtender
+        Left (VarC id) -> appExtender
+        Left (AbsC id rhs) -> appExtender
   if null rest then Extender result (\x y -> error "unhandled blub") else extender result
 
 noopExtender :: Either CompletedParseResult IntermediateParseResult -> Extender
@@ -196,7 +210,9 @@ getFirstElement ((Scope inner) : tokens) = do
   let extendable = Extendable (Closed (Left scopeContent) tokens)
   let traced = trace ("getFirstTrace: " ++ show extendable) extendable
   appExtender traced
--- getFirstElement (T Lambda : (T (VarUseOrBind id)) : T Dot : Scope s : tokens) = undefined
+getFirstElement (T Lambda : (T (VarUseOrBind id)) : T Dot : Scope s : tokens) = do
+  let body = toCompleted' $ unpackClose $ parse' $ Unhandled s
+  absExtender (Extendable (E (Abs id (Just $ Left body)) tokens))
 getFirstElement (T Lambda : (T (VarUseOrBind id)) : T Dot : tokens) = absExtender (Extendable (E (Abs id Nothing) tokens))
 getFirstElement (T (VarUseOrBind id) : tokens) = appExtender (Extendable (E (Var id) tokens))
 getFirstElement val = error $ "Unhandled (possibly invalid) sequence: " ++ show val
@@ -215,7 +231,10 @@ appExtender (Extendable (Closed (Left val) tks)) = do
   let f newRhs tks = Extendable (Closed (Right $ AppPC val newRhs) tks)
   Extender (Extendable (Closed (Left val) tks)) f
 appExtender (Extendable (Closed (Right (AppPC lhs rhs)) ts)) = do
-  let f newRhs tks = Extendable (Closed (Right $ AppPC lhs (App rhs newRhs)) tks)
+  let appF ecp = case ecp of
+        (Left compl) -> AppPC compl
+        (Right part) -> App part
+  let f newRhs tks = Extendable (Closed (Right $ AppPC lhs (Right $ appF rhs newRhs)) tks)
   Extender (Extendable (Closed (Right $ AppPC lhs rhs) ts)) f
 appExtender (Extendable (E orig ts)) = do
   let f rhs tks = Extendable (E (App orig rhs) tks)
@@ -228,11 +247,13 @@ appExtender val = error $ "unexpected app extend" ++ show val
 absExtender :: ParseResult -> Extender
 absExtender (Extendable (E orig@(Abs id body) tks)) = do
   let extendBody prev append = case prev of
-        Nothing -> append
-        Just body -> App body append
-  let f rhs tks = Extendable (E (Abs id (Just $ extendBody body rhs)) tks)
+        Nothing -> Just append
+        Just body -> case body of
+          (Left completed) -> Just $ Right $ AppPC completed append
+          (Right partial) -> Just $ Right $ App partial body
+  let f rhs tks = Extendable (E (Abs id (extendBody body rhs)) tks)
   Extender (Extendable (E orig tks)) f
-absExtender _ = error "unexpected abs extend"
+absExtender val = error $ "unexpected abs extend: " ++ show val
 
 -- >>> unpack $ getFirstElement $ generalize [Lambda, VarUseOrBind "a", Dot, VarUseOrBind "a"]
 -- Intermediate (Abs "a" Nothing)
@@ -300,10 +321,10 @@ toTerm (AbsC id r) = Lib.Abs id (toTerm r)
 toTerm (VarC id) = Lib.Var id
 
 toCompleted :: IntermediateParseResult -> CompletedParseResult
-toCompleted (App l r) = AppC (toCompleted l) (toCompleted r)
-toCompleted (Abs id r) = AbsC id (toCompleted $ fromJust r)
+toCompleted (App l r) = AppC (toCompleted l) (toCompleted' r)
+toCompleted (Abs id r) = AbsC id (toCompleted' $ fromJust r)
 toCompleted (Var id) = VarC id
-toCompleted (AppPC l r) = AppC l (toCompleted r)
+toCompleted (AppPC l r) = AppC l (toCompleted' r)
 
 toCompleted' :: Either CompletedParseResult IntermediateParseResult -> CompletedParseResult
 toCompleted' (Left val) = val
@@ -320,7 +341,7 @@ isCompletedOrError :: Extender -> Bool
 -- isCompletedOrError (Extender a b) | trace ("check completed: " ++ show a) False = undefined
 isCompletedOrError ex = do
   let check = isCompletedOrError' ex
-  let checkt = trace ("is " ++ show (original ex) ++ " ?: " ++ show check) check
+  let checkt = trace ("isCompl " ++ show (original ex) ++ " ?: " ++ show check) check
   checkt
 
 isCompletedOrError' :: Extender -> Bool
