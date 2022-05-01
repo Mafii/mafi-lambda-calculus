@@ -78,60 +78,9 @@ parse tokens =
     ensureCompleted $
       parse' $
         Unhandled $
-          removeEmptyScopes $
-            createLambdaScopes $
-              ensureComplete $
-                takeFirstScope $
-                  generalize $
-                    flatMapTokens tokens
-
-removeEmptyScopes :: [TokenOrScope] -> [TokenOrScope]
-removeEmptyScopes = concatMap (Data.Foldable.toList . f)
-  where
-    f (T el) = Just $ T el
-    f (Scope []) = Nothing
-    f (Scope s) = Just $ Scope $ removeEmptyScopes s
-
-createLambdaScopes :: [TokenOrScope] -> [TokenOrScope]
-createLambdaScopes els = fromFinished $ ensureResult $ createLambdaScopes' $ Empty els
-
-createLambdaScopes' :: ScopeAggregator -> ScopeAggregator
-createLambdaScopes' (Empty els) = createLambdaScopes' $ Aggregating els [] 0
-createLambdaScopes' (Aggregating (T Lambda : (T (VarUseOrBind id)) : T Dot : tokens) done _) = do
-  let handledAdd = createLambdaScopes' (Empty [Scope tokens])
-  let unwrapedAdd = fromFinished $ ensureResult handledAdd
-  let newDone = done ++ [Scope $ T Lambda : T (VarUseOrBind id) : T Dot : unwrapedAdd]
-  Result [] newDone
-createLambdaScopes' (Aggregating (Scope s : tokens) done _) = do
-  let handledScope = createLambdaScopes' (Empty s)
-  let unwrapedScope = fromFinished $ ensureResult handledScope
-  createLambdaScopes' (Aggregating tokens (done ++ [Scope unwrapedScope]) 0)
-createLambdaScopes' (Aggregating (next : tokens) done _) = do
-  let done' = done ++ [next]
-  createLambdaScopes' (Aggregating tokens done' 0)
-createLambdaScopes' (Aggregating [] done _) = Result [] done
-createLambdaScopes' r@(Result {}) = r
-
--- >>> createLambdaScopes' $ Empty [T Lambda, T (VarUseOrBind "a"), T Dot, T Lambda, T (VarUseOrBind "a"), T Dot, T (VarUseOrBind "a")]
--- >>> createLambdaScopes' $ Empty [T (VarUseOrBind "a")]
--- >>> createLambdaScopes' $ Empty []
--- Result [] [Scope [T Lambda,T (VarUseOrBind "a"),T Dot,Scope [Scope [T Lambda,T (VarUseOrBind "a"),T Dot,Scope [T (VarUseOrBind "a")]]]]]
--- Result [] [T (VarUseOrBind "a")]
--- Result [] []
-
-fromFinished :: ([TokenOrScope], [TokenOrScope]) -> [TokenOrScope]
-fromFinished ([], els) = els
-fromFinished (els, els') = error "unfinished lambda scope creation bug"
-
-ensureComplete :: ([TokenOrScope], [TokenOrScope]) -> [TokenOrScope]
--- ensureComplete (a, b) | trace ("ensureCompleted: " ++ show a ++ " rest: " ++ show b) False = undefined
-ensureComplete (tokens, []) = [Scope tokens]
-ensureComplete (firstScope, unhandled) = do
-  let (nextScope, unhandled') = takeFirstScope unhandled
-  ensureComplete ([Scope firstScope, Scope nextScope], unhandled')
-
--- >>> ensureComplete $ takeFirstScope $ generalize $ flatMapTokens $ Tokenizer.tokenize "(a b c) d"
--- [Scope [T (VarUseOrBind "a"),T (VarUseOrBind "b"),T (VarUseOrBind "c")],Scope [T (VarUseOrBind "d")]]
+          getScopes $
+            generalize $
+              flatMapTokens tokens
 
 generalize :: [Token] -> [TokenOrScope]
 generalize = map T
@@ -260,46 +209,37 @@ absExtender val = error $ "unexpected abs extend: " ++ show val
 
 -- scope
 
-takeFirstScope :: [TokenOrScope] -> ([TokenOrScope], [TokenOrScope])
-takeFirstScope tokens = ensureResult $ takeFirstScope' $ Empty tokens
+getScopes :: [TokenOrScope] -> [TokenOrScope]
+getScopes tokens = ensureFullResult $ getScope $ Empty ([T OpenParens] ++ tokens ++ [T ClosingParens])
 
-takeFirstScope' :: ScopeAggregator -> ScopeAggregator
-takeFirstScope' aggr
+getScope :: ScopeAggregator -> ScopeAggregator
+getScope aggr
   | r@(Result {}) <- aggr = r
-  | Empty tks@(T OpenParens : tokens) <- aggr =
-    do
-      let first = takeFirstScope' $ Aggregating [] tokens 1
-      let isFinished r = case r of
-            (Result l r) -> True
-            _ -> False
-      let result = until isFinished takeFirstScope' first
-      result
-  | Empty tokens <- aggr = takeFirstScope' $ Aggregating [] tokens 0
+  | Empty tks@(T OpenParens : tokens) <- aggr = getScope $ Aggregating [] tokens 1
+  | Empty tokens <- aggr = getScope $ Aggregating [] tokens 0
   | Aggregating els [] 0 <- aggr = Result els []
   | Aggregating els (T ClosingParens : tokens) depth <- aggr =
     if depth > 1
-      then takeFirstScope' $ Aggregating els tokens (depth - 1)
+      then getScope $ Aggregating els tokens (depth - 1)
       else
         if depth == 1
           then Result els tokens
           else error "parenthesis mismatch"
   | Aggregating els [next] depth <- aggr = if depth == 0 then Result (els ++ [next]) [] else error "parenthesis mismatch"
-  | Aggregating els tks@(T OpenParens : tokens) depth <- aggr = Result els tks
-  -- let (scope, rest) = takeFirstScope (T OpenParens : tokens)
-  -- takeFirstScope' $ Aggregating (els ++ scope) rest depth
-  | Aggregating els (next : tokens) depth <- aggr = takeFirstScope' $ Aggregating (els ++ [next]) tokens depth
+  | Aggregating els tks@(T OpenParens : tokens) depth <- aggr = getScope $ Aggregating els tokens (depth + 1)
+  | Aggregating els (next : tokens) depth <- aggr = getScope $ Aggregating (els ++ [next]) tokens depth
   | otherwise = error $ "unhandled scope take: " ++ show aggr
 
 -- manual scope grabber test
 
--- >>> takeFirstScope' $ Empty [OpenParens, OpenParens, (VarUseOrBind "a"), ClosingParens, ClosingParens]
--- Result [Right (Scope [Left (VarUseOrBind "a")])] []
+-- >>> getScopes $ [T OpenParens, T OpenParens, T (VarUseOrBind "a"), T ClosingParens, T ClosingParens]
+-- [T (VarUseOrBind "a")]
 
--- >>> takeFirstScope' $ Empty $ flatMapTokens $ Tokenizer.tokenize "(a(b)c)"
--- Result [Left (VarUseOrBind "a"),Right (Scope [Left (VarUseOrBind "b")]),Left (VarUseOrBind "c")] []
+-- >>> getScopes $ generalize $ flatMapTokens $ Tokenizer.tokenize "(a(b)c)"
+-- [T (VarUseOrBind "a"),T (VarUseOrBind "b"),T (VarUseOrBind "c")]
 
--- >>> takeFirstScope' $ Empty $ generalize $ flatMapTokens $ Tokenizer.tokenize "a (b c)"
--- Result [T (VarUseOrBind "a")] [T OpenParens,T (VarUseOrBind "b"),T (VarUseOrBind "c"),T ClosingParens]
+-- >>> getScopes $ generalize $ flatMapTokens $ Tokenizer.tokenize "a (b c)"
+-- [T (VarUseOrBind "a"),T (VarUseOrBind "b"),T (VarUseOrBind "c")]
 
 type BracketDepth = Int
 
@@ -309,9 +249,9 @@ data ScopeAggregator
   | Result [TokenOrScope] [TokenOrScope]
   deriving (Show)
 
-ensureResult :: ScopeAggregator -> ([TokenOrScope], [TokenOrScope])
-ensureResult (Result scope rest) = (scope, rest)
-ensureResult val = error $ "bug, not finished:: " ++ show val
+ensureFullResult :: ScopeAggregator -> [TokenOrScope]
+ensureFullResult (Result done []) = done
+ensureFullResult val = error $ "bug, not finished:: " ++ show val
 
 -- helpers
 
