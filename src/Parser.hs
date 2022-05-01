@@ -73,24 +73,50 @@ data ParseResult
   deriving (Show)
 
 parse :: [Tokenizer.Token] -> Term
-parse inp = do
-  let r = parseb inp
-  let rt = trace ("end: " ++ show r) r
-  rt
-
-parseb :: [Tokenizer.Token] -> Term
-parseb tokens =
+parse tokens =
   toTerm $
     ensureCompleted $
       parse' $
         Unhandled $
-          ensureComplete $
-            takeFirstScope $
-              generalize $
-                flatMapTokens tokens
+          createLambdaScopes $
+            ensureComplete $
+              takeFirstScope $
+                generalize $
+                  flatMapTokens tokens
+
+createLambdaScopes :: [TokenOrScope] -> [TokenOrScope]
+createLambdaScopes els = fromFinished $ ensureResult $ createLambdaScopes' $ Empty els
+
+createLambdaScopes' :: ScopeAggregator -> ScopeAggregator
+createLambdaScopes' (Empty els) = createLambdaScopes' $ Aggregating els [] 0
+createLambdaScopes' (Aggregating (T Lambda : (T (VarUseOrBind id)) : T Dot : tokens) done _) = do
+  let handledAdd = createLambdaScopes' (Empty [Scope tokens])
+  let unwrapedAdd = fromFinished $ ensureResult handledAdd
+  let newDone = done ++ [Scope $ T Lambda : T (VarUseOrBind id) : T Dot : unwrapedAdd]
+  Result [] newDone
+createLambdaScopes' (Aggregating (Scope s : tokens) done _) = do
+  let handledScope = createLambdaScopes' (Empty s)
+  let unwrapedScope = fromFinished $ ensureResult handledScope
+  createLambdaScopes' (Aggregating tokens (done ++ [Scope unwrapedScope]) 0)
+createLambdaScopes' (Aggregating (next : tokens) done _) = do
+  let done' = done ++ [next]
+  createLambdaScopes' (Aggregating tokens done' 0)
+createLambdaScopes' (Aggregating [] done _) = Result [] done
+createLambdaScopes' r@(Result {}) = r
+
+-- >>> createLambdaScopes' $ Empty [T Lambda, T (VarUseOrBind "a"), T Dot, T Lambda, T (VarUseOrBind "a"), T Dot, T (VarUseOrBind "a")]
+-- >>> createLambdaScopes' $ Empty [T (VarUseOrBind "a")]
+-- >>> createLambdaScopes' $ Empty []
+-- Result [] [Scope [T Lambda,T (VarUseOrBind "a"),T Dot,Scope [Scope [T Lambda,T (VarUseOrBind "a"),T Dot,Scope [T (VarUseOrBind "a")]]]]]
+-- Result [] [T (VarUseOrBind "a")]
+-- Result [] []
+
+fromFinished :: ([TokenOrScope], [TokenOrScope]) -> [TokenOrScope]
+fromFinished ([], els) = els
+fromFinished (els, els') = error "unfinished lambda scope creation bug"
 
 ensureComplete :: ([TokenOrScope], [TokenOrScope]) -> [TokenOrScope]
-ensureComplete (a, b) | trace ("ensureCompleted: " ++ show a ++ " rest: " ++ show b) False = undefined
+-- ensureComplete (a, b) | trace ("ensureCompleted: " ++ show a ++ " rest: " ++ show b) False = undefined
 ensureComplete (tokens, []) = [Scope tokens]
 ensureComplete (firstScope, unhandled) = do
   let (nextScope, unhandled') = takeFirstScope unhandled
@@ -125,7 +151,7 @@ data Extender = Extender
   }
 
 unpack :: Extender -> ParseResult
-unpack val | trace ("unpack: " ++ show (original val)) False = undefined
+-- unpack val | trace ("unpack: " ++ show (original val)) False = undefined
 unpack (Extender (Extendable (Closed el tks)) f) = Extendable (Closed el tks)
 unpack (Extender (Extendable (E el tks)) f) = Extendable (E el tks)
 unpack (Extender (Completed el) f) = Completed el
@@ -170,6 +196,7 @@ getFirstElement ((Scope inner) : tokens) = do
   let extendable = Extendable (Closed (Left scopeContent) tokens)
   let traced = trace ("getFirstTrace: " ++ show extendable) extendable
   appExtender traced
+-- getFirstElement (T Lambda : (T (VarUseOrBind id)) : T Dot : Scope s : tokens) = undefined
 getFirstElement (T Lambda : (T (VarUseOrBind id)) : T Dot : tokens) = absExtender (Extendable (E (Abs id Nothing) tokens))
 getFirstElement (T (VarUseOrBind id) : tokens) = appExtender (Extendable (E (Var id) tokens))
 getFirstElement val = error $ "Unhandled (possibly invalid) sequence: " ++ show val
