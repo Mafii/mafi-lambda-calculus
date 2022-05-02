@@ -79,8 +79,7 @@ parse tokens =
       parse' $
         Unhandled $
           getScopes $
-            generalize $
-              flatMapTokens tokens
+            flatMapTokens tokens
 
 generalize :: [Token] -> [TokenOrScope]
 generalize = map T
@@ -209,49 +208,133 @@ absExtender val = error $ "unexpected abs extend: " ++ show val
 
 -- scope
 
-getScopes :: [TokenOrScope] -> [TokenOrScope]
-getScopes tokens = ensureFullResult $ getScope $ Empty ([T OpenParens] ++ tokens ++ [T ClosingParens])
+-- getScopes :: [Token] -> [TokenOrScope]
+-- getScopes tokens =
+--   ensureFullResult $
+--     until
+--       isCompleted
+--       getScope
+--       $ Aggregating
+--         (ExpandableScope [] 0)
+--         ([OpenParens] ++ tokens ++ [ClosingParens]) -- simplifies getScope as we never have multiple top level elements
+--         0
 
-getScope :: ScopeAggregator -> ScopeAggregator
-getScope aggr
-  | r@(Result {}) <- aggr = r
-  | Empty tks@(T OpenParens : tokens) <- aggr = getScope $ Aggregating [] tokens 1
-  | Empty tokens <- aggr = getScope $ Aggregating [] tokens 0
-  | Aggregating els [] 0 <- aggr = Result els []
-  | Aggregating els (T ClosingParens : tokens) depth <- aggr =
-    if depth > 1
-      then getScope $ Aggregating els tokens (depth - 1)
-      else
-        if depth == 1
-          then Result els tokens
-          else error "parenthesis mismatch"
-  | Aggregating els [next] depth <- aggr = if depth == 0 then Result (els ++ [next]) [] else error "parenthesis mismatch"
-  | Aggregating els tks@(T OpenParens : tokens) depth <- aggr = getScope $ Aggregating els tokens (depth + 1)
-  | Aggregating els (next : tokens) depth <- aggr = getScope $ Aggregating (els ++ [next]) tokens depth
-  | otherwise = error $ "unhandled scope take: " ++ show aggr
+getScopes :: [Token] -> [TokenOrScope]
+getScopes tokens =
+  ensureFullResult $
+    until
+      isCompleted
+      getScope
+      $ Aggregating
+        (ExpandableScope [] 0)
+        tokens
+        0
+
+isCompleted :: Scope -> Bool
+isCompleted el | trace (show el) False = undefined
+isCompleted (Aggregating _ [] 0) = True
+isCompleted val = trace (show val) False
+
+getScope :: Scope -> Scope
+getScope el | trace (show el) False = undefined
+getScope finished@(Aggregating handled [] 0) = finished
+getScope (Aggregating handled [ClosingParens] depth) = Aggregating handled [] (depth - 1)
+getScope (Aggregating handled (ClosingParens : tokens) depth) = Aggregating handled tokens (depth - 1)
+getScope (Aggregating handled (OpenParens : tokens) depth) = Aggregating (openScope handled depth) tokens (depth + 1)
+getScope (Aggregating handled (next : tokens) depth) = Aggregating (expandOrAppend handled next depth) tokens depth
+getScope finished@(Aggregating handled [] n) = error "missing closing parenthesis"
+
+expandOrAppend :: HandledTokens -> Token -> BracketDepth -> HandledTokens
+expandOrAppend h t d | trace ("eoa: " ++ show h ++ show t ++ show d) False = undefined
+expandOrAppend _ ClosingParens _ = error "mistake"
+expandOrAppend _ OpenParens _ = error "mistake"
+expandOrAppend (ExpandableScope els depth) element currentDepth = do
+  if depth == currentDepth
+    then ExpandableScope (els ++ [Tk element]) currentDepth
+    else impl els element currentDepth
+  where
+    impl els = impl' (reverse els)
+    impl' origs@((Sc (ExpandableScope els depth)) : rest) element currentDepth =
+      if depth == currentDepth
+        then ExpandableScope (reverse rest ++ [Sc $ ExpandableScope (els ++ [Tk element]) depth]) currentDepth
+        else ExpandableScope (reverse origs ++ [Tk element]) currentDepth
+    impl' origs element currentDepth = ExpandableScope (reverse origs ++ [Tk element]) currentDepth
+expandOrAppend _ _ _ = error "unexpected"
+
+openScope :: HandledTokens -> BracketDepth -> HandledTokens
+openScope (ExpandableScope els outer) depth = ExpandableScope (els ++ [Sc $ ExpandableScope [] (depth + 1)]) outer
+openScope _ _ = error "unexpected"
 
 -- manual scope grabber test
 
--- >>> getScopes $ [T OpenParens, T OpenParens, T (VarUseOrBind "a"), T ClosingParens, T ClosingParens]
--- [T (VarUseOrBind "a")]
+-- >>> getScopes' ([OpenParens, OpenParens, VarUseOrBind "a", ClosingParens, ClosingParens])
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 2)] 2) [] 0
 
--- >>> getScopes $ generalize $ flatMapTokens $ Tokenizer.tokenize "(a(b)c)"
--- [T (VarUseOrBind "a"),T (VarUseOrBind "b"),T (VarUseOrBind "c")]
+-- >>> ([OpenParens, OpenParens, VarUseOrBind "a", ClosingParens, ClosingParens])
+-- >>> getScope $ Aggregating (ExpandableScope [] 0) it 0
+-- >>> getScope $ getScope $ getScope $ getScope $ it
+-- >>> getScope $ getScope $ getScope $ getScope $ it
+-- >>> isCompleted $ getScope $ it
+-- [OpenParens,OpenParens,VarUseOrBind "a",ClosingParens,ClosingParens]
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1)] 0) [OpenParens,VarUseOrBind "a",ClosingParens,ClosingParens] 1
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 2)] 2) [] 0
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 2)] 2) [] 0
+-- True
 
--- >>> getScopes $ generalize $ flatMapTokens $ Tokenizer.tokenize "a (b c)"
--- [T (VarUseOrBind "a"),T (VarUseOrBind "b"),T (VarUseOrBind "c")]
+-- >>> [OpenParens, OpenParens, VarUseOrBind "a", ClosingParens, ClosingParens]
+-- >>> getScope $ Aggregating (ExpandableScope [] 0) ([OpenParens] ++ it ++ [ClosingParens]) 0
+-- >>> getScope it
+-- >>> getScope it
+-- >>> getScope it
+-- >>> getScope it
+-- >>> getScope it
+-- >>> getScope it
+-- >>> getScope it
+-- >>> isCompleted it
+-- [OpenParens,OpenParens,VarUseOrBind "a",ClosingParens,ClosingParens]
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1)] 0) [OpenParens,OpenParens,VarUseOrBind "a",ClosingParens,ClosingParens,ClosingParens] 1
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [] 2)] 0) [OpenParens,VarUseOrBind "a",ClosingParens,ClosingParens,ClosingParens] 2
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [] 2),Sc (ExpandableScope [] 3)] 0) [VarUseOrBind "a",ClosingParens,ClosingParens,ClosingParens] 3
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [] 2),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 3)] 3) [ClosingParens,ClosingParens,ClosingParens] 3
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [] 2),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 3)] 3) [ClosingParens,ClosingParens] 2
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [] 2),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 3)] 3) [ClosingParens] 1
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [] 2),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 3)] 3) [] 0
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [] 2),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 3)] 3) [] 0
+-- True
+
+-- >>> getScopes $ flatMapTokens $ Tokenizer.tokenize "(a(b)c)"
+-- bug, not finished: Aggregating (ExpandableScope [Sc (ExpandableScope [] 1)] 0) [OpenParens,VarUseOrBind "a",OpenParens,VarUseOrBind "b",ClosingParens,VarUseOrBind "c",ClosingParens,ClosingParens] 1
+
+-- >>> getScopes $ flatMapTokens $ Tokenizer.tokenize "a (b c)"
+-- [T (VarUseOrBind "a"),Scope [T (VarUseOrBind "b")],T (VarUseOrBind "c")]
+
+type NewTokens = [Token]
+
+type HandledTokens = ExpandableScope
+
+data AggrTokenOrScope
+  = Tk Token
+  | Sc ExpandableScope
+  deriving (Show)
+
+data ExpandableScope = ExpandableScope [AggrTokenOrScope] BracketDepth | CompletedScope [AggrTokenOrScope]
+  deriving (Show)
 
 type BracketDepth = Int
 
-data ScopeAggregator
-  = Empty [TokenOrScope]
-  | Aggregating [TokenOrScope] [TokenOrScope] BracketDepth
-  | Result [TokenOrScope] [TokenOrScope]
+data Scope = Aggregating HandledTokens NewTokens BracketDepth
   deriving (Show)
 
-ensureFullResult :: ScopeAggregator -> [TokenOrScope]
-ensureFullResult (Result done []) = done
-ensureFullResult val = error $ "bug, not finished:: " ++ show val
+ensureFullResult :: Scope -> [TokenOrScope]
+ensureFullResult val | trace "ensurefullresult" False = undefined
+ensureFullResult (Aggregating (CompletedScope els) [] 0) = map toToS els
+ensureFullResult (Aggregating (ExpandableScope els _) [] 0) = map toToS els
+ensureFullResult val = error $ "bug, not finished: " ++ show val
+
+toToS :: AggrTokenOrScope -> TokenOrScope
+toToS (Tk t) = T t
+toToS (Sc (CompletedScope els)) = Scope $ map toToS els
+toToS (Sc (ExpandableScope els d)) = Scope $ map toToS els
 
 -- helpers
 
