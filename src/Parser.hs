@@ -127,7 +127,7 @@ getFirstElement ((Scope inner) : tokens) = do
   traced
 getFirstElement (T Lambda : (T (VarUseOrBind id)) : T Dot : tokens) = do
   let body = parse' tokens
-  Closed (AbsC id body) tokens
+  Closed (AbsC id body) []
 getFirstElement (T (VarUseOrBind id) : s@Scope {} : tokens) = Closed (VarC id) (s : tokens)
 getFirstElement (T (VarUseOrBind id) : tokens) = E (Var id) tokens
 getFirstElement val = error $ "Unhandled (possibly invalid) sequence: " ++ show val
@@ -186,9 +186,9 @@ expandOrAppend (ExpandableScope els depth) element currentDepth = do
       if isScopeAndEqual (last els) currentDepth
         then ExpandableScope (init els ++ [appendElementToScope (last els) element]) currentDepth
         else
-          if depth == currentDepth
+          if depth == currentDepth || currentDepth == 0
             then ExpandableScope (els ++ [element]) depth
-            else error "unexpected mistake"
+            else ExpandableScope (els ++ [Sc $ ExpandableScope [element] depth]) depth
 expandOrAppend (CompletedScope els) element currentDepth = do
   ExpandableScope (els ++ [element]) currentDepth
 
