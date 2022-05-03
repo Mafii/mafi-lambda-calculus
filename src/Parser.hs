@@ -158,8 +158,8 @@ isCompleted val = trace (show val) False
 getScope :: Scope -> Scope
 getScope el | trace (show el) False = undefined
 getScope finished@(Aggregating handled [] 0) = finished
-getScope (Aggregating handled [ClosingParens] depth) = Aggregating handled [] (depth - 1)
-getScope (Aggregating handled (ClosingParens : tokens) depth) = Aggregating handled tokens (depth - 1)
+getScope (Aggregating handled [ClosingParens] depth) = closeScope (Aggregating handled [] depth)
+getScope (Aggregating handled (ClosingParens : tokens) depth) = closeScope (Aggregating handled tokens depth)
 getScope (Aggregating handled (OpenParens : tokens) depth) = Aggregating (openScope handled depth) tokens (depth + 1)
 getScope (Aggregating handled (next : tokens) depth) = Aggregating (expandOrAppend handled next depth) tokens depth
 getScope finished@(Aggregating handled [] n) = error "missing closing parenthesis"
@@ -169,28 +169,68 @@ expandOrAppend h t d | trace ("eoa: " ++ show h ++ show t ++ show d) False = und
 expandOrAppend _ ClosingParens _ = error "mistake"
 expandOrAppend _ OpenParens _ = error "mistake"
 expandOrAppend (ExpandableScope els depth) element currentDepth = do
-  if depth == currentDepth
-    then ExpandableScope (els ++ [Tk element]) currentDepth
-    else impl els element currentDepth
-  where
-    impl els = impl' (reverse els)
-    impl' origs@((Sc (ExpandableScope els depth)) : rest) element currentDepth =
-      if depth == currentDepth
-        then ExpandableScope (reverse rest ++ [Sc $ ExpandableScope (els ++ [Tk element]) depth]) currentDepth
-        else ExpandableScope (reverse origs ++ [Tk element]) currentDepth
-    impl' origs element currentDepth = ExpandableScope (reverse origs ++ [Tk element]) currentDepth
-expandOrAppend _ _ _ = error "unexpected"
+  if null els
+    then ExpandableScope [Tk element] 0
+    else
+      if isScopeAndEqual (last els) currentDepth
+        then ExpandableScope (init els ++ [appendElementToScope (last els) (Tk element)]) currentDepth
+        else
+          if depth == currentDepth
+            then ExpandableScope (els ++ [Tk element]) depth
+            else error "unexpected mistake"
+expandOrAppend (CompletedScope els) element currentDepth = do
+  ExpandableScope (els ++ [Tk element]) currentDepth
+
+appendElementToScope :: AggrTokenOrScope -> AggrTokenOrScope -> AggrTokenOrScope
+appendElementToScope (Sc (ExpandableScope els depth)) new = Sc (ExpandableScope (els ++ [new]) depth)
+appendElementToScope _ _ = error "bad precondition"
 
 openScope :: HandledTokens -> BracketDepth -> HandledTokens
-openScope (ExpandableScope els outer) depth = ExpandableScope (els ++ [Sc $ ExpandableScope [] (depth + 1)]) outer
-openScope _ _ = error "unexpected"
+openScope (ExpandableScope els outer) depth = ExpandableScope (els ++ [Sc $ ExpandableScope [] (depth + 1)]) (depth + 1)
+openScope (CompletedScope els) depth = ExpandableScope (els ++ [Sc $ ExpandableScope [] (depth + 1)]) (depth + 1)
+
+closeScope :: Scope -> Scope
+closeScope val | trace ("close scope: " ++ show val) False = undefined
+closeScope (Aggregating (ExpandableScope els inner) tokens depth) = do
+  let els' = map (\x -> if isScopeAndDeeperOrEqual x depth then closeEl x else x) els
+  Aggregating (CompletedScope els') tokens (depth - 1)
+-- closeScope (Aggregating (ExpandableScope els inner) tokens depth) | inner == depth = do
+--   Aggregating (CompletedScope els) tokens (depth - 1)
+closeScope (Aggregating (CompletedScope els) tokens depth) = Aggregating (CompletedScope els) tokens (depth - 1)
+
+closeEl :: AggrTokenOrScope -> AggrTokenOrScope
+closeEl (Sc (ExpandableScope els d)) = Sc (CompletedScope $ map closeEl els)
+closeEl t@(Tk _) = t
+closeEl _ = error "undefined behaviour!"
+
+isScopeAndDeeperOrEqual :: AggrTokenOrScope -> BracketDepth -> Bool
+isScopeAndDeeperOrEqual (Sc (ExpandableScope s d)) depth | trace ("isDeeperOrEqual: " ++ show d ++ show depth) False = undefined
+isScopeAndDeeperOrEqual (Sc (ExpandableScope s d)) depth = d >= depth
+isScopeAndDeeperOrEqual _ _ = False
+
+isScopeAndEqual :: AggrTokenOrScope -> BracketDepth -> Bool
+isScopeAndEqual (Sc (ExpandableScope s d)) depth = d == depth
+isScopeAndEqual _ _ = False
 
 -- manual scope grabber test
 
--- >>>
+-- >>> getScope $ Aggregating (ExpandableScope [] 0) [OpenParens, VarUseOrBind "a", VarUseOrBind "b", ClosingParens] 0
+-- >>> getScope it
+-- >>> getScope it
+-- >>> getScope it
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1)] 0) [VarUseOrBind "a",VarUseOrBind "b",ClosingParens] 1
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [Tk (VarUseOrBind "a")] 1)] 1) [VarUseOrBind "b",ClosingParens] 1
+-- Aggregating (ExpandableScope [Sc (ExpandableScope [Tk (VarUseOrBind "a"),Tk (VarUseOrBind "b")] 1)] 1) [ClosingParens] 1
+-- Aggregating (CompletedScope [Sc (CompletedScope [Tk (VarUseOrBind "a"),Tk (VarUseOrBind "b")])]) [] 0
 
--- >>> getScopes' ([OpenParens, OpenParens, VarUseOrBind "a", ClosingParens, ClosingParens])
--- Aggregating (ExpandableScope [Sc (ExpandableScope [] 1),Sc (ExpandableScope [Tk (VarUseOrBind "a")] 2)] 2) [] 0
+-- >>> getScope $ Aggregating (ExpandableScope [] 0) [VarUseOrBind "a", OpenParens, VarUseOrBind "b", VarUseOrBind "c", ClosingParens] 0
+-- >>> getScope it
+-- >>> getScope it
+-- >>> getScope it
+-- Variable not in scope: it :: Scope
+
+-- >>> getScopes ([OpenParens, OpenParens, VarUseOrBind "a", ClosingParens, ClosingParens])
+-- [Scope [],Scope [T (VarUseOrBind "a")]]
 
 -- >>> getScopes $ flatMapTokens $ Tokenizer.tokenize "(a(b)c)"
 -- bug, not finished: Aggregating (ExpandableScope [Sc (ExpandableScope [] 1)] 0) [OpenParens,VarUseOrBind "a",OpenParens,VarUseOrBind "b",ClosingParens,VarUseOrBind "c",ClosingParens,ClosingParens] 1
