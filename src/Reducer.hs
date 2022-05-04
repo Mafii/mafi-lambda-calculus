@@ -1,4 +1,6 @@
+-- required so comments can be evaluated
 {-# LANGUAGE QuasiQuotes #-}
+{-# HLINT ignore "Unused LANGUAGE pragma" #-}
 {-# HLINT ignore "Use list comprehension" #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
@@ -144,13 +146,12 @@ replaceBindsConflictingWithFreeVariables (App abs@(Abs id body) rhs) = do
       | (Abs id body) <- term = createAbs id f body
       | (App lhs rhs) <- term = App (replaceConflicts lhs f) (replaceConflicts rhs f)
       | var@(Var id) <- term = var
+    createAbs :: Id -> (Id -> Id) -> Term -> Term
+    createAbs oldId newIdFactory body = do
+      let newId = newIdFactory oldId
+      let newBody = replaceIdWithConcreteValue body oldId (Var newId)
+      Abs newId newBody
 replaceBindsConflictingWithFreeVariables _ = error "unhandled"
-
-createAbs :: Id -> (Id -> Id) -> Term -> Term
-createAbs oldId newIdFactory body = do
-  let newId = newIdFactory oldId
-  let newBody = replaceIdWithConcreteValue body oldId (Var newId)
-  Abs newId newBody
 
 -- >>> betaReduce [λ| (λ a . λ b . a b) b |]
 -- (λb1. (b b1))
