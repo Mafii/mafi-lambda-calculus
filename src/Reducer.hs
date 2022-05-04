@@ -78,3 +78,30 @@ alphaEq _ _ = False
 -- True
 -- False
 -- need to pick random identifier to alpha convert lhs and rhs first, not yet done
+
+betaConvert :: Term -> Term
+betaConvert (App (Abs id body) rhs)
+  | id `isFreeIn` rhs = error "Needs alpha conversion first to avoid variable conflicts in application"
+  | id `isBoundIn` body = error "Precondition failure: Body of abstraction has bind with id of abstraction"
+  | any (`isBoundIn` body) $ getFreeVariables rhs =
+    error "Precondition failure: Rhs of reduction contains bound variable conflicting bind in lhs"
+  | otherwise = replaceIdWithConcreteValue body id rhs
+betaConvert _ = error "not yet implemeneted/defined behaviour"
+
+-- precondition: no naming conflicts
+replaceIdWithConcreteValue :: Term -> Id -> Term -> Term
+replaceIdWithConcreteValue var@(Var id') id replacement
+  | id == id' = replacement
+  | otherwise = var
+replaceIdWithConcreteValue (App lhs rhs) id replacement =
+  App (replaceIdWithConcreteValue lhs id replacement) (replaceIdWithConcreteValue rhs id replacement)
+replaceIdWithConcreteValue (Abs id' body) id replacement = Abs id' (replaceIdWithConcreteValue body id replacement)
+
+-- >>> betaConvert [λ| (λ a . a) b |]
+-- >>> betaConvert [λ| (λ a . a) (λ a . a) |]
+-- >>> betaConvert [λ| (λ a . λ b . a) (99 * c) |]
+-- >>> betaConvert [λ| (λ a . λ b . a) b |]
+-- b
+-- (λa. a)
+-- (λb. ((99 *) c))
+-- Precondition failure: Rhs of reduction contains bound variable conflicting bind in lhs
