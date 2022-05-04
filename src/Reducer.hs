@@ -38,8 +38,10 @@ isFreeIn :: Id -> Term -> Bool
 isFreeIn id term = elem id $ getFreeVariables term
 
 -- >>> "c" `isFreeIn` [lambda| lambda a . lambda b . a c b |]
+-- >>> "a" `isFreeIn` [lambda| lambda a . lambda b . a c b |]
 -- >>> "b" `isFreeIn` [lambda| lambda a . lambda b . a c b |]
 -- True
+-- False
 -- False
 
 getBoundVariables :: Term -> [Id]
@@ -80,7 +82,6 @@ alphaConvert _ _ = error "can only alpha convert abstractions"
 -- (λa. (λb. ((a c) b)))
 -- (λx. (λb. ((x c) b)))
 
--- not complete: if outer scope has a variable already, it can not be used in inner scope again
 alphaEq :: Term -> Term -> Bool
 alphaEq (Var id) (Var id') = id == id'
 alphaEq (App lhs rhs) (App lhs' rhs') = lhs `alphaEq` lhs' && rhs `alphaEq` rhs'
