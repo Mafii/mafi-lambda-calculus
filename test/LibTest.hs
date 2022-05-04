@@ -18,3 +18,5 @@ spec = do
       showPretty [λ| a (b c) d |] `shouldBe` "a (b c) d"
     it "Brackets are omitted when irrelevant" $ do
       showPretty [λ| (b c) d |] `shouldBe` "b c d"
+    it "Does not bracket inner lambda expressions" $ do
+      showPretty [λ| λx.λy.x |] `shouldBe` "λx.λy.x"
