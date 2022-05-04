@@ -1,7 +1,10 @@
 {-# LANGUAGE QuasiQuotes #-}
+{-# HLINT ignore "Use list comprehension" #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Reducer (reduce, alphaEq) where
 
+import Data.List (nub)
 import LCQQ (lambda, λ)
 import Lib (Id, Term (Abs, App, Var))
 
@@ -16,13 +19,13 @@ reduce val = val
 -- - bound: λa.a <- a is bound variable
 -- - free:  λa.b <- b is a free variable
 
--- todo: ensure no conflicts are happening
 getFreeVariables :: Term -> [Id]
-getFreeVariables (Abs id body)
-  | id `isBoundIn` body = error "unhandled case, need to un-conflict variable first"
-  | otherwise = filter (/= id) $ getFreeVariables body
-getFreeVariables (Var id) = [id]
-getFreeVariables (App lhs rhs) = getFreeVariables lhs ++ getFreeVariables rhs
+getFreeVariables term = get term []
+  where
+    get term knownBinds
+      | (Abs id body) <- term = get body $ id : knownBinds
+      | (App lhs rhs) <- term = get lhs knownBinds ++ get rhs knownBinds
+      | (Var id) <- term = if id `elem` knownBinds then [] else [id]
 
 -- >>> getFreeVariables [lambda| a b c d |]
 -- >>> getFreeVariables [lambda| lambda a . lambda b . a c b |]
@@ -114,18 +117,43 @@ getNonConflictingIdentifier term term' identifierBase = do
 -- True
 
 betaReduce :: Term -> Term
-betaReduce (App (Abs id body) rhs)
-  | id `isFreeIn` rhs = error "Needs alpha conversion first to avoid variable conflicts in application"
-  | id `isBoundIn` body = error "Precondition failure: Body of abstraction has bind with id of abstraction"
-  | any (`isBoundIn` body) $ getFreeVariables rhs = do
-    let conflicts = filter (`isBoundIn` body) $ getFreeVariables rhs
-    let replacements = map (\c -> (c, getNonConflictingIdentifier body rhs c)) conflicts
-    foldr (\(v, r) rhs' -> replaceIdWithConcreteValue rhs' v (Var r)) rhs replacements
-  | otherwise = replaceIdWithConcreteValue body id rhs
+betaReduce app@(App (Abs id body) rhs) = do
+  let fixed = replaceBindsConflictingWithFreeVariables app
+  let newId = getId fixed -- could be improved with deconstruction in fixed: let (newId, newBody, fixedRhs) = ...
+  let newBody = getBody fixed
+  let fixedRhs = getRhs fixed
+  replaceIdWithConcreteValue newBody newId fixedRhs
+  where
+    getId (App (Abs id body) _) = id
+    getId _ = error "invalid usecase"
+    getBody (App (Abs id body) _) = body
+    getBody _ = error "invalid usecase"
+    getRhs (App (Abs {}) rhs) = rhs
+    getRhs _ = error "invalid usecase"
 betaReduce _ = error "not yet implemeneted/defined behaviour"
 
--- >>> betaReduce [λ| (λ a . λ b . a) b |]
--- b1
+replaceBindsConflictingWithFreeVariables :: Term -> Term
+replaceBindsConflictingWithFreeVariables (App abs@(Abs id body) rhs) = do
+  let freeVars = getFreeVariables rhs ++ getFreeVariables abs
+  let newIdSelector oldId = if oldId `elem` freeVars then getNonConflictingIdentifier abs rhs oldId else oldId
+  let fixedBody = replaceConflicts body newIdSelector
+  let fixedRhs = replaceConflicts rhs newIdSelector
+  App (Abs (newIdSelector id) fixedBody) rhs
+  where
+    replaceConflicts term f -- f is the new id factory
+      | (Abs id body) <- term = createAbs id f body
+      | (App lhs rhs) <- term = App (replaceConflicts lhs f) (replaceConflicts rhs f)
+      | var@(Var id) <- term = var
+replaceBindsConflictingWithFreeVariables _ = error "unhandled"
+
+createAbs :: Id -> (Id -> Id) -> Term -> Term
+createAbs oldId newIdFactory body = do
+  let newId = newIdFactory oldId
+  let newBody = replaceIdWithConcreteValue body oldId (Var newId)
+  Abs newId newBody
+
+-- >>> betaReduce [λ| (λ a . λ b . a b) b |]
+-- (λb1. (b b1))
 
 -- precondition: no naming conflicts
 replaceIdWithConcreteValue :: Term -> Id -> Term -> Term
@@ -136,13 +164,15 @@ replaceIdWithConcreteValue (App lhs rhs) id replacement =
   App (replaceIdWithConcreteValue lhs id replacement) (replaceIdWithConcreteValue rhs id replacement)
 replaceIdWithConcreteValue (Abs id' body) id replacement = Abs id' (replaceIdWithConcreteValue body id replacement)
 
+-- >>> betaReduce [λ| (λ a . a) |]
 -- >>> betaReduce [λ| (λ a . a) b |]
 -- >>> betaReduce [λ| (λ a . a a a) b |]
 -- >>> betaReduce [λ| (λ a . a) (λ a . a) |]
 -- >>> betaReduce [λ| (λ a . λ b . a) (99 * c) |]
 -- >>> betaReduce [λ| (λ a . λ b . a) b |]
+-- not yet implemeneted/defined behaviour
 -- b
 -- ((b b) b)
 -- (λa. a)
 -- (λb. ((99 *) c))
--- b1
+-- (λb1. b)
