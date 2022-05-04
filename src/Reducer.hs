@@ -1,12 +1,14 @@
 {-# LANGUAGE QuasiQuotes #-}
 
-module Reducer (reduce) where
+module Reducer (reduce, alphaEq) where
 
 import LCQQ (lambda, λ)
 import Lib (Id, Term (Abs, App, Var))
 
 reduce :: Term -> Term
-reduce a = a
+reduce var@(Var id) = var
+reduce app@(App (Abs id body) rhs) = reduce $ betaReduce app
+reduce val = val
 
 -- "free variable" ^= variable that is captured from outer scope
 -- "bound variable" ^= variable that is used inside abstraction and is bound by the abstraction variable id
@@ -111,14 +113,19 @@ getNonConflictingIdentifier term term' identifierBase = do
 -- "y1"
 -- True
 
-betaConvert :: Term -> Term
-betaConvert (App (Abs id body) rhs)
+betaReduce :: Term -> Term
+betaReduce (App (Abs id body) rhs)
   | id `isFreeIn` rhs = error "Needs alpha conversion first to avoid variable conflicts in application"
   | id `isBoundIn` body = error "Precondition failure: Body of abstraction has bind with id of abstraction"
-  | any (`isBoundIn` body) $ getFreeVariables rhs =
-    error "Precondition failure: Rhs of reduction contains bound variable conflicting bind in lhs"
+  | any (`isBoundIn` body) $ getFreeVariables rhs = do
+    let conflicts = filter (`isBoundIn` body) $ getFreeVariables rhs
+    let replacements = map (\c -> (c, getNonConflictingIdentifier body rhs c)) conflicts
+    foldr (\(v, r) rhs' -> replaceIdWithConcreteValue rhs' v (Var r)) rhs replacements
   | otherwise = replaceIdWithConcreteValue body id rhs
-betaConvert _ = error "not yet implemeneted/defined behaviour"
+betaReduce _ = error "not yet implemeneted/defined behaviour"
+
+-- >>> betaReduce [λ| (λ a . λ b . a) b |]
+-- b1
 
 -- precondition: no naming conflicts
 replaceIdWithConcreteValue :: Term -> Id -> Term -> Term
@@ -129,13 +136,13 @@ replaceIdWithConcreteValue (App lhs rhs) id replacement =
   App (replaceIdWithConcreteValue lhs id replacement) (replaceIdWithConcreteValue rhs id replacement)
 replaceIdWithConcreteValue (Abs id' body) id replacement = Abs id' (replaceIdWithConcreteValue body id replacement)
 
--- >>> betaConvert [λ| (λ a . a) b |]
--- >>> betaConvert [λ| (λ a . a a a) b |]
--- >>> betaConvert [λ| (λ a . a) (λ a . a) |]
--- >>> betaConvert [λ| (λ a . λ b . a) (99 * c) |]
--- >>> betaConvert [λ| (λ a . λ b . a) b |]
+-- >>> betaReduce [λ| (λ a . a) b |]
+-- >>> betaReduce [λ| (λ a . a a a) b |]
+-- >>> betaReduce [λ| (λ a . a) (λ a . a) |]
+-- >>> betaReduce [λ| (λ a . λ b . a) (99 * c) |]
+-- >>> betaReduce [λ| (λ a . λ b . a) b |]
 -- b
 -- ((b b) b)
 -- (λa. a)
 -- (λb. ((99 *) c))
--- Precondition failure: Rhs of reduction contains bound variable conflicting bind in lhs
+-- b1
