@@ -28,6 +28,7 @@ library
       LCQQ
       Lib
       Parser
+      Playground
       Reducer
       Tokenizer
   other-modules:
