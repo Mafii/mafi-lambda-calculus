@@ -1,6 +1,7 @@
 module Lib
   ( Id,
     Term (Var, App, Abs),
+    showPretty,
   )
 where
 
@@ -23,3 +24,10 @@ instance Show Term where
   show (Abs id term) = "(λ" ++ id ++ ". " ++ show term ++ ")"
   -- show (App term term') = show term ++ " " ++ show term'
   show (App term term') = "(" ++ show term ++ " " ++ show term' ++ ")" -- easier to argue about
+
+showPretty :: Term -> String
+showPretty (Var v) = v
+showPretty (Abs id term) = "λ" ++ id ++ "." ++ showPretty term
+showPretty (App (Abs id body) term') = "(λ" ++ id ++ "." ++ showPretty body ++ ") " ++ showPretty term'
+showPretty (App (Var id) rhs@(App {})) = id ++ " (" ++ showPretty rhs ++ ")"
+showPretty (App term term') = showPretty term ++ " " ++ showPretty term'

@@ -55,6 +55,7 @@ test-suite mafi-lambda-calculus-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      LibTest
       ParserTest
       ReducerTest
       Paths_mafi_lambda_calculus
