@@ -10,6 +10,7 @@ module ParserMonad
     getClosingParenthesis,
     isCompleted,
     runParser,
+    createParser,
   )
 where
 

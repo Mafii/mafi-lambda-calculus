@@ -5,6 +5,30 @@ module Playground where
 import Control.Applicative (Applicative (liftA2))
 import LCQQ (lambda, λ)
 
+infixr 0 |>
+
+(|>) :: b -> (b -> c) -> c
+(|>) = flip ($)
+
+(|||) :: (Int -> Bool) -> (Int -> Bool) -> Int -> Bool
+(|||) = liftA2 (||)
+
+f' :: b1 -> b2 -> (b1 -> b2 -> c) -> c
+f' a b c = b |> a |> c
+
+f :: Int -> Bool
+f a = y a |> g ||| h
+
+g :: p -> Bool
+g a = True
+
+h :: p -> Bool
+h a = False
+
+y a = a
+
+-- (a b) (c d)
+
 -- (a) ((λ a . a a) (2 2))
 -- App (App (Var "2") (Var "2")) (App (Var "2") (Var "2"))
 --
@@ -27,19 +51,19 @@ import LCQQ (lambda, λ)
 fn :: p -> p
 fn a = a
 
-(|||) :: (a -> Bool) -> (a -> Bool) -> a -> Bool
-(|||) = liftA2 (||)
+---(|||) :: (a -> Bool) -> (a -> Bool) -> a -> Bool
+---(|||) = liftA2 (||)
 
 -- >>> :t not . ((> 3) ||| (> 2))
 -- >>> not . ((> 3) ||| (> 2)) $ 7
 -- not . ((> 3) ||| (> 2)) :: (Ord a, Num a) => a -> Bool
 -- False
 
-test :: Bool
-test = (|||) (> 3) (> 2) 1
+--test :: Bool
+--test = (|||) (> 3) (> 2) 1
 
-test' :: Bool
-test' = (|||) (> 3) (> 2) 4
+--test' :: Bool
+--test' = (|||) (> 3) (> 2) 4
 
 -- >>> test
 -- >>> test'
