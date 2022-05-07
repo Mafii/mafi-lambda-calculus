@@ -183,7 +183,7 @@ expandOrAppend _ (Tk ClosingParens) _ = error "mistake"
 expandOrAppend _ (Tk OpenParens) _ = error "mistake"
 expandOrAppend (ExpandableScope els depth) element currentDepth = do
   if null els
-    then ExpandableScope [element] currentDepth -- maybe 0 not sure if bug
+    then ExpandableScope [element] currentDepth
     else
       if isScopeAndEqual (last els) currentDepth
         then ExpandableScope (init els ++ [appendElementToScope (last els) element]) currentDepth
