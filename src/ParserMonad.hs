@@ -84,7 +84,6 @@ instance Applicative Parser where
   pure a = Parser $ pure a
   f <*> a = Parser $ unparser f <*> unparser a
 
--- is this actually obeying the laws?
 instance Alternative Parser where
   empty = empty -- only works because of monad plus on R. Otherwise: Parser $ StateT $ const empty
   a <|> b = Parser $ unparser a <|> unparser b

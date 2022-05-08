@@ -1,3 +1,5 @@
+{- Learning attempt at parsing: Buggy and replaced by (feature complete) NewParser -}
+
 module Parser (parse) where
 
 import Data.Either (fromLeft)
