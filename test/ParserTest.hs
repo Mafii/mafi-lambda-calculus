@@ -26,3 +26,10 @@ spec = do
       ([λ| (λx. x λy. x y) 5 |] :: Term) `shouldBe` App (Abs "x" (App (Var "x") (Abs "y" (App (Var "x") (Var "y"))))) (Var "5")
     it "Nested Parenthesis are handled correctly" $
       ([λ| (a (b) c) |] :: Term) `shouldBe` App (App (Var "a") (Var "b")) (Var "c")
+    it "Can start with scope and then have more terms" $
+      [lambda| ((((a))b))c |] `shouldBe` App (App (Var "a") (Var "b")) (Var "c")
+    it "(lambda a . (lambda b . b 7 8) 5) 99 is handled correctly" $
+      [lambda| (lambda a . (lambda b . b 7 8) 5) 99 |]
+        `shouldBe` App
+          (Abs "a" (App (Abs "b" (App (App (Var "b") (Var "7")) (Var "8"))) (Var "5")))
+          (Var "99")
