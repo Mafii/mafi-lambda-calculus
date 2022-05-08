@@ -29,43 +29,43 @@ infixl 0 |> -- ($) has infixr 0
 (|>) = flip ($)
 
 parse :: String -> R Term
-parse text = text |> tokenize |> flatMapTokens |> runParser (parser 0) |> completedOrError
+parse text = text |> tokenize |> flatMapTokens |> runParser parser |> completedOrError
 
 -- >>> parse "a b c (d e) f"
 -- ((((a b) c) (d e)) f)
 
-parser :: Depth -> Parser Term
-parser = parseScope <||> parseApp <||> parseAbs <||> parseVar
+parser :: Parser Term
+parser = parseScope <|> parseApp <|> parseAbs <|> parseVar
 
 -- so we can avoid passing depth to every call in the parser function
 (<||>) :: (Alternative f1, Applicative f2) => f2 (f1 a) -> f2 (f1 a) -> f2 (f1 a)
 (<||>) = liftA2 (<|>)
 
-parseScope :: Depth -> Parser Term
-parseScope depth = createParser $ \ts -> do
+parseScope :: Parser Term
+parseScope = createParser $ \ts -> do
   ((), ts) <- runParser getOpeningParenthesis ts
-  (scopeContent, ts) <- runParser (parser (depth + 1)) ts
+  (scopeContent, ts) <- runParser parser ts
   ((), ts) <- runParser getClosingParenthesis ts
   Ok (scopeContent, ts)
 
-parseVar :: Depth -> Parser Term
-parseVar depth = createParser $ \s -> do
+parseVar :: Parser Term
+parseVar = createParser $ \s -> do
   (id, ts) <- runParser getVar s
   Ok (Var id, ts)
 
-parseApp :: Depth -> Parser Term
-parseApp depth = createParser $ \s -> do
-  (lhs, ts) <- runParser (getNext depth) s
-  (rhs, ts) <- runParser (getNext depth) ts
+parseApp :: Parser Term
+parseApp = createParser $ \s -> do
+  (lhs, ts) <- runParser getNext s
+  (rhs, ts) <- runParser getNext ts
   until isDone runGetNext (Ok (App lhs rhs, ts))
   where
     isDone (Ok (t, s)) = isNextBracket s || null s
     isDone (Error e) = True
-    getNext = parseScope <||> parseAbs <||> parseVar
+    getNext = parseScope <|> parseAbs <|> parseVar
     runGetNext original@(Ok (t, s)) = do
       let try =
             ( do
-                (el, ts) <- runParser (getNext depth) s
+                (el, ts) <- runParser getNext s
                 Ok (App t el, ts)
             )
       try <|> original
@@ -74,15 +74,13 @@ parseApp depth = createParser $ \s -> do
       Ok (v, ts) -> True
       Error e -> False
 
-parseAbs :: Depth -> Parser Term
-parseAbs depth = createParser $ \s -> do
+parseAbs :: Parser Term
+parseAbs = createParser $ \s -> do
   (id, ts) <- runParser getLambdaVar s -- ensures (lambda id .) as triplet, returns only the id as the rest is useless
-  (body, ts') <- runParser (parser depth) ts
+  (body, ts') <- runParser parser ts
   Ok (Abs id body, ts')
 
 -- infrastructure
-
-type Depth = Int
 
 flatMapTokens :: [Tokenizer.Token] -> [Token]
 flatMapTokens = flatMap mapToken
