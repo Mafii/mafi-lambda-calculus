@@ -1,4 +1,4 @@
-module ResultMonad (R (Ok, Error), fromOk) where
+module ResultMonad (R (Ok, Error), fromOk, orElse) where
 
 import Control.Applicative (Alternative)
 import GHC.Base (Alternative (empty, (<|>)), Applicative (liftA2), MonadPlus)
@@ -23,6 +23,10 @@ instance (Show a) => Show (R a) where
   show (Error e) = e
   show (Ok value) = show value
 
+instance (Eq a) => Eq (R a) where
+  (Ok a) == (Ok b) = a == b
+  _ == _ = False
+
 instance Alternative R where
   empty = Error "uninitialized result monad"
   (Error e) <|> (Ok a) = Ok a
@@ -40,3 +44,19 @@ instance MonadPlus R
 fromOk :: R a -> a
 fromOk (Ok a) = a
 fromOk (Error e) = error $ "R.fromOk: " ++ e
+
+infixl 0 `orElse`
+
+-- ra `orElse` pure . b is equal to ra <|> pure . b
+
+-- >>> ((Error "asdf") <|> pure "hey") == ((Error "asdf") `orElse` pure "hey")
+-- True
+
+-- >>> ((Error "asdf") `orElse` "hey")
+-- >>> (Ok "lhs there") `orElse` "hey"
+-- "hey"
+-- "lhs there"
+
+orElse :: R a -> a -> a
+orElse (Ok a) _ = a
+orElse (Error e) a = a

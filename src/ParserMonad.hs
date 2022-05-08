@@ -29,10 +29,10 @@ data Token
   | VarUseOrBind String
   deriving (Show)
 
--- I found this article when I struggled with implementing Applicative and Monad for my type
--- The rest of the code is inspired by the paper referenced in the article
+-- I found this article when I struggled with implementing Applicative and Monad for my type.
+-- The rest of the code is inspired by the article and the paper mentioned there:
 -- https://vaibhavsagar.com/blog/2018/02/04/revisiting-monadic-parsing-haskell/
--- I wanted to use R instead of maybe for error messages.
+-- I wanted to use R(esult Monad) instead of Maybe for error messages.
 newtype Parser a = Parser {unparser :: StateT [Token] R a}
 
 createParser :: ([Token] -> R (a, [Token])) -> Parser a

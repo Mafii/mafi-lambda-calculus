@@ -1,9 +1,11 @@
+{-# LANGUAGE InstanceSigs #-}
+
 module NewParser (parse, Token (VarUseOrBind, OpenParens, ClosingParens, Dot, Lambda)) where
 
 import Control.Applicative (Alternative ((<|>)), Applicative (liftA2))
 import Data.Either (fromLeft)
 import qualified Data.Foldable
-import Data.Functor ((<&>))
+import Data.Functor (($>), (<&>))
 import Data.Maybe (fromJust)
 import Debug.Trace (trace)
 import Lib (Id, Term (Abs, App, Var))
@@ -19,7 +21,7 @@ import ParserMonad
     isCompleted,
     runParser,
   )
-import ResultMonad (R (Error, Ok), fromOk)
+import ResultMonad (R (Error, Ok), fromOk, orElse)
 import Tokenizer (tokenize)
 import qualified Tokenizer (Token (..), tokenize)
 
@@ -56,33 +58,37 @@ parseVar = createParser $ \s -> do
   Ok (Var id, ts)
 
 parseApp :: Parser Term
-parseApp = createParser $ \s -> do
-  (lhs, ts) <- runParser getNext s
+parseApp = createParser $ \ts -> do
+  (lhs, ts) <- runParser getNext ts
   (rhs, ts) <- runParser getNext ts
   extend (App lhs rhs) ts
   where
     getNext = parseScope <|> parseAbs <|> parseVar
 
 extend :: Term -> [Token] -> R (Term, [Token])
-extend term ts = until isDone runGetNext (Ok (term, ts))
+extend term ts = until isDone getNext (Ok (term, ts))
   where
     isDone (Ok (t, s)) = isNextBracket s || null s
     isDone (Error e) = True
-    runGetNext original@(Ok (t, s)) = do
-      let try =
-            ( do
-                (el, ts) <- runParser parser s
-                Ok (App t el, ts)
-            )
-      try <|> original
-    runGetNext (Error e) = Error e
-    isNextBracket s = case runParser getClosingParenthesis s of
-      Ok (v, ts) -> True
-      Error e -> False
+    getNext :: R (Term, [Token]) -> R (Term, [Token])
+    getNext s = s >>= \(lhs, ts) -> runParser parser ts >>= \(rhs, ts) -> Ok (App lhs rhs, ts)
+    isNextBracket :: [Token] -> Bool
+    isNextBracket s = runParser getClosingParenthesis s $> True `orElse` False
+
+-- >>> Error "hi" *> pure True
+-- >>> Ok ((), []) *> pure True
+-- >>> Error "asdf" *> pure True <|> pure False
+-- >>> Error "abc" $> True `orElse` False
+-- >>> Ok "abc" $> True `orElse` False
+-- hi
+-- True
+-- False
+-- False
+-- True
 
 parseAbs :: Parser Term
 parseAbs = createParser $ \s -> do
-  (id, ts) <- runParser getLambdaVar s -- ensures (lambda id .) as triplet, returns only the id as the rest is useless
+  (id, ts) <- runParser getLambdaVar s
   (body, ts') <- runParser parser ts
   Ok (Abs id body, ts')
 
