@@ -25,6 +25,8 @@ import qualified Tokenizer (Token (..), tokenize)
 
 infixl 0 |> -- ($) has infixr 0
 
+-- I personally think the pipe forward operator ((|>), also found in F# iirc) is superior over function composition (.)
+-- and the $ operator as (at least in europe) humans read from left to right.
 (|>) :: b -> (b -> c) -> c
 (|>) = flip ($)
 
@@ -33,17 +35,13 @@ parse text = text |> tokenize |> flatMapTokens |> runParser parser |> completedO
 
 -- >>> parse "a b c (d e) f"
 -- >>> parse "((((a))b))c"
--- >>> parse "lambda a . (lambda b . b 7 8) 5"
--- ((((a b) c) (d e)) f)
--- Expected closing parenthesis but got: VarUseOrBind "b"
--- ((λa. (λb. ((b 7) 8))) 5)
+-- >>> parse "(lambda a . (lambda b . b 7 8) 5) 99"
+-- ((a b) ((c (d e)) f))
+-- ((a b) c)
+-- ((λa. ((λb. ((b 7) 8)) 5)) 99)
 
 parser :: Parser Term
-parser = parseScope <|> parseApp <|> parseAbs <|> parseVar
-
--- so we can avoid passing depth to every call in the parser function
-(<||>) :: (Alternative f1, Applicative f2) => f2 (f1 a) -> f2 (f1 a) -> f2 (f1 a)
-(<||>) = liftA2 (<|>)
+parser = parseApp <|> parseScope <|> parseAbs <|> parseVar
 
 parseScope :: Parser Term
 parseScope = createParser $ \ts -> do
@@ -61,15 +59,19 @@ parseApp :: Parser Term
 parseApp = createParser $ \s -> do
   (lhs, ts) <- runParser getNext s
   (rhs, ts) <- runParser getNext ts
-  until isDone runGetNext (Ok (App lhs rhs, ts))
+  extend (App lhs rhs) ts
+  where
+    getNext = parseScope <|> parseAbs <|> parseVar
+
+extend :: Term -> [Token] -> R (Term, [Token])
+extend term ts = until isDone runGetNext (Ok (term, ts))
   where
     isDone (Ok (t, s)) = isNextBracket s || null s
     isDone (Error e) = True
-    getNext = parseScope <|> parseAbs <|> parseVar
     runGetNext original@(Ok (t, s)) = do
       let try =
             ( do
-                (el, ts) <- runParser getNext s
+                (el, ts) <- runParser parser s -- might need non-app getnext from parseApp, maybe bug
                 Ok (App t el, ts)
             )
       try <|> original
