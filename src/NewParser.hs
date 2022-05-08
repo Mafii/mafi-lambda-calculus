@@ -32,7 +32,11 @@ parse :: String -> R Term
 parse text = text |> tokenize |> flatMapTokens |> runParser parser |> completedOrError
 
 -- >>> parse "a b c (d e) f"
+-- >>> parse "((((a))b))c"
+-- >>> parse "lambda a . (lambda b . b 7 8) 5"
 -- ((((a b) c) (d e)) f)
+-- Expected closing parenthesis but got: VarUseOrBind "b"
+-- ((λa. (λb. ((b 7) 8))) 5)
 
 parser :: Parser Term
 parser = parseScope <|> parseApp <|> parseAbs <|> parseVar
