@@ -2,7 +2,7 @@
 
 module NewParser (parse, Token (VarUseOrBind, OpenParens, ClosingParens, Dot, Lambda)) where
 
-import Control.Applicative (Alternative ((<|>)), Applicative (liftA2))
+import Control.Applicative (Alternative ((<|>)), Applicative (liftA2), liftA)
 import Data.Either (fromLeft)
 import qualified Data.Foldable
 import Data.Functor (($>), (<&>))
@@ -66,14 +66,23 @@ parseApp = createParser $ \ts -> do
     getNext = parseScope <|> parseAbs <|> parseVar
 
 extend :: Term -> [Token] -> R (Term, [Token])
-extend term ts = until isDone getNext (Ok (term, ts))
+extend term ts = until isDone (parser >>> App) (Ok (term, ts))
   where
-    isDone (Ok (t, s)) = isNextBracket s || null s
-    isDone (Error e) = True
-    getNext :: R (Term, [Token]) -> R (Term, [Token])
-    getNext s = s >>= \(lhs, ts) -> runParser parser ts >>= \(rhs, ts) -> Ok (App lhs rhs, ts)
+    isDone :: R (Term, [Token]) -> Bool
+    isDone s = state s <&> isNextBracket ||| null `orElse` False
     isNextBracket :: [Token] -> Bool
     isNextBracket s = runParser getClosingParenthesis s $> True `orElse` False
+
+(|||) :: (a -> Bool) -> (a -> Bool) -> a -> Bool
+(|||) = liftA2 (||)
+
+state :: R (Term, [Token]) -> R [Token]
+state (Ok (t, ts)) = Ok ts
+state (Error e) = Error e
+
+-- takes a parser and a term combiner and puts the term of the state and the result of the parser into the combiner
+(>>>) :: Parser Term -> (Term -> Term -> Term) -> R (Term, [Token]) -> R (Term, [Token])
+(>>>) p f state = state >>= \(lhs, ts) -> runParser p ts >>= \(rhs, ts) -> Ok (f lhs rhs, ts)
 
 -- >>> Error "hi" *> pure True
 -- >>> Ok ((), []) *> pure True
