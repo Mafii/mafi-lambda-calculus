@@ -31,14 +31,8 @@ infixl 0 |> -- ($) has infixr 0
 parse :: String -> R Term
 parse text = text |> tokenize |> flatMapTokens |> runParser (parser 0) |> completedOrError
 
--- >>> parse "a b c"
--- Partial result: (a b), but unhandled tokens: [VarUseOrBind "c"]
-
--- basically a sanity check
-completedOrError :: (Show a) => R (a, [Token]) -> R a
-completedOrError (Ok (a, [])) = Ok a
-completedOrError (Ok (a, ts)) = Error $ "Partial result: " ++ show a ++ ", but unhandled tokens: " ++ show ts
-completedOrError (Error a) = Error a
+-- >>> parse "a b c (d e) f"
+-- ((((a b) c) (d e)) f)
 
 parser :: Depth -> Parser Term
 parser = parseScope <||> parseApp <||> parseAbs <||> parseVar
@@ -63,8 +57,7 @@ parseApp :: Depth -> Parser Term
 parseApp depth = createParser $ \s -> do
   (lhs, ts) <- runParser (getNext depth) s
   (rhs, ts) <- runParser (getNext depth) ts
-  Ok (App lhs rhs, ts) -- non-finished try
-  -- until isDone runGetNext (Ok (T $ App (toTerm lhs) (toTerm rhs), ts))
+  until isDone runGetNext (Ok (App lhs rhs, ts))
   where
     isDone (Ok (t, s)) = isNextBracket s || null s
     isDone (Error e) = True
@@ -105,3 +98,9 @@ mapToken Tokenizer.LambdaWord = Just Lambda
 mapToken Tokenizer.Newline = Nothing
 mapToken Tokenizer.Space = Nothing
 mapToken (Tokenizer.VariableUsageOrBinding id) = Just $ VarUseOrBind id
+
+-- basically a sanity check
+completedOrError :: (Show a) => R (a, [Token]) -> R a
+completedOrError (Ok (a, [])) = Ok a
+completedOrError (Ok (a, ts)) = Error $ "Partial result: " ++ show a ++ ", but unhandled tokens: " ++ show ts
+completedOrError (Error a) = Error a
