@@ -71,7 +71,7 @@ extend term ts = until isDone runGetNext (Ok (term, ts))
     runGetNext original@(Ok (t, s)) = do
       let try =
             ( do
-                (el, ts) <- runParser parser s -- might need non-app getnext from parseApp, maybe bug
+                (el, ts) <- runParser parser s
                 Ok (App t el, ts)
             )
       try <|> original

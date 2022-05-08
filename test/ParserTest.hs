@@ -7,6 +7,7 @@ import LCQQ (lambda, λ)
 import Lib (Term (Abs, App, Var))
 import Test.Hspec (Spec, describe, it, shouldBe)
 
+-- uses NewParser over Parser now.
 spec :: Spec
 spec = do
   let _ = setLocaleEncoding utf8

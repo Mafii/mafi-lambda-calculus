@@ -13,6 +13,6 @@ main = hspec spec
 
 spec :: Spec
 spec = do
-  describe "Parser Tests" ParserTest.spec
+  describe "(New)Parser Tests" ParserTest.spec
   describe "Reducer Tests" ReducerTest.spec
   describe "Lib Tests" LibTest.spec

@@ -11,7 +11,8 @@ import Language.Haskell.TH.Quote (QuasiQuoter (..))
 import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Haskell.TH.Syntax as TH
 import Lib (Id, Term (Abs, App, Var))
-import qualified Parser (parse)
+import qualified NewParser (parse)
+import ResultMonad (fromOk)
 import Tokenizer
   ( Token
       ( ClosingParenthesis,
@@ -39,7 +40,7 @@ lambda :: QuasiQuoter
 lambda = λ
 
 parse :: String -> Q TH.Exp
-parse = toExp . parse'
+parse = toExp . fromOk . NewParser.parse
 
 -- >>> :t [|Var "a"|]
 -- [|Var "a"|] :: Quote m => m Exp
@@ -65,8 +66,5 @@ toExp (App term term') = do
   exp' <- toExp term'
   return $ TH.AppE (TH.AppE conE exp) exp'
 
--- >>> toExp (parse' "lambda a. a b")
+-- >>> toExp $ fromOk $ (NewParser.parse "lambda a. a b")
 -- AppE (AppE (ConE Lib.Abs) (ListE [LitE (CharL 'a')])) (AppE (AppE (ConE Lib.App) (AppE (ConE Lib.Var) (ListE [LitE (CharL 'a')]))) (AppE (ConE Lib.Var) (ListE [LitE (CharL 'b')])))
-
-parse' :: String -> Term
-parse' text = Parser.parse $ tokenize text

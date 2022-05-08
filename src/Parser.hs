@@ -63,6 +63,7 @@ data CompletedParseResult
 data Extendable = E IntermediateParseResult [TokenOrScope] | Closed CompletedParseResult [TokenOrScope]
   deriving (Show)
 
+-- last remark: Deprecated and definitely improved over by "NewParser.hs" that uses a monadic design
 -- remark: this is incomplete. It works for most cases, but some especially nested terms break the parser atm.
 -- remark 2: I would prefer if this code was cleaned up a lot and used a error monad over runtime errors so the consumer can decide what to do
 parse :: [Tokenizer.Token] -> Term
