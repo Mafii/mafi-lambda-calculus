@@ -2,7 +2,7 @@
 
 module NewParser (parse, Token (VarUseOrBind, OpenParens, ClosingParens, Dot, Lambda)) where
 
-import Control.Applicative (Alternative ((<|>)), Applicative (liftA2), liftA)
+import Control.Applicative (Alternative ((<|>)), Applicative (liftA2), liftA, liftA3)
 import Data.Either (fromLeft)
 import qualified Data.Foldable
 import Data.Functor (($>), (<&>))
@@ -11,7 +11,7 @@ import Debug.Trace (trace)
 import Lib (Id, Term (Abs, App, Var))
 import qualified Lib
 import ParserMonad
-  ( Parser,
+  ( Parser (unparser),
     Token (..),
     createParser,
     getClosingParenthesis,
@@ -52,24 +52,47 @@ parseScope = createParser $ \ts -> do
   ((), ts) <- runParser getClosingParenthesis ts
   Ok (scopeContent, ts)
 
+pS :: Parser Term
+pS = getOpeningParenthesis *>> parser <<* getClosingParenthesis
+
+g
+
+-- pS = getOpeningParenthesis >>> parser <<* undefined
+
+-- idea: Behaves similar to (<*): gets the result of the left side, calculates the right side and
+-- returns the left side with the state left after calculating the right side.
+(<<*) :: Parser a -> Parser b -> Parser a
+(<<*) p1 p2 = createParser $ \ts -> do
+  (result, ts) <- runParser p1 ts
+  (_, ts) <- runParser p2 ts
+  Ok (result, ts)
+
+-- idea: Behaves similar to (*>): gets the result of the left side and discards it,
+-- then calculates the result of the right side based on the state
+(*>>) :: Parser a -> Parser b -> Parser b
+(*>>) p1 p2 = createParser $ \ts -> do
+  (_, ts) <- runParser p1 ts
+  (result, ts) <- runParser p2 ts
+  Ok (result, ts)
+
 parseVar :: Parser Term
-parseVar = createParser $ \s -> do
-  (id, ts) <- runParser getVar s
-  Ok (Var id, ts)
+parseVar = Var <$> getVar
 
 parseApp :: Parser Term
-parseApp = createParser $ \ts -> do
-  (lhs, ts) <- runParser getNext ts
-  (rhs, ts) <- runParser getNext ts
-  extend (App lhs rhs) ts
+parseApp = appL getNext getNext |> extend
   where
     getNext = parseScope <|> parseAbs <|> parseVar
 
-extend :: Term -> [Token] -> R (Term, [Token])
-extend term ts = until isDone (parser >>> App) (Ok (term, ts))
+extend :: Parser Term -> Parser Term
+extend p = createParser $ \s -> do
+  (lhs, s) <- runParser p s
+  let done = null s || isNextBracket s
+  if done
+    then Ok (lhs, s)
+    else do
+      (rhs, s) <- runParser parser s
+      Ok (App lhs rhs, s)
   where
-    isDone :: R (Term, [Token]) -> Bool
-    isDone s = state s <&> isNextBracket ||| null `orElse` False
     isNextBracket :: [Token] -> Bool
     isNextBracket s = runParser getClosingParenthesis s $> True `orElse` False
 
@@ -80,9 +103,51 @@ state :: R (Term, [Token]) -> R [Token]
 state (Ok (t, ts)) = Ok ts
 state (Error e) = Error e
 
--- takes a parser and a term combiner and puts the term of the state and the result of the parser into the combiner
-(>>>) :: Parser Term -> (Term -> Term -> Term) -> R (Term, [Token]) -> R (Term, [Token])
-(>>>) p f state = state >>= \(lhs, ts) -> runParser p ts >>= \(rhs, ts) -> Ok (f lhs rhs, ts)
+-- can be read as "create parser and put its result into" - this has been a repeating pattern
+
+-- (*->) :: Parser a -> (a -> b) -> Parser b
+-- (*->) p f = createParser $ \s -> do
+--   (r, ts) <- runParser p s
+--   Ok (f r, ts)
+
+-- when generalizing the signature away from "Term" I realized this is almost fmap, <$> or <*>
+-- fmap :: (a -> b) -> f a -> f b
+-- (<*>) :: f (a -> b) -> f a -> f b
+-- (from hoogle: (<*>) = liftA2 id)
+-- (<$>) :: Functor f => (a -> b) -> f a -> f b
+
+-- this "proofs" that (*->) could be flip (<$>):
+-- >>> runParser (getVar *-> Var) [VarUseOrBind "a"]
+-- >>> runParser (Var <$> getVar) [VarUseOrBind "a"]
+-- (a,[])
+-- (a,[])
+
+-- as (<$>) is function application ($) lifted over a functor,
+-- and (|>) is flip ($) in my module, maybe (<|>>) would be  a good idea (but (<|>) is already defined in Alternative)
+-- so maybe (|>>) ?
+
+(|>>) :: (Functor f) => f a -> (a -> b) -> f b
+-- (|>>) v f = fmap f v -- would also work as <$> is the infix operator of fmap
+(|>>) = flip (<$>)
+
+appL :: (Functor f, Applicative f) => f Term -> f Term -> f Term
+appL = liftA2 App
+
+-- >>> let parser = getVar |>> Var |> appL (Var <$> getVar)
+-- >>> let parser2 = appL (Var <$> getVar) (Var <$> getVar)
+-- >>> runParser parser [VarUseOrBind "a", VarUseOrBind "b"]
+-- >>> runParser parser2 [VarUseOrBind "a", VarUseOrBind "b"]
+-- ((a b),[])
+-- ((a b),[])
+
+(>>>) :: Parser a -> (a -> b) -> [Token] -> R (b, [Token])
+(>>>) p f tokens = runParser p tokens >>= \(result, ts) -> Ok (f result, ts)
+
+-- evalAndDiscard :: Parser a -> (a -> b) -> [Token] -> R (a, [Token])
+-- evalAndDiscard p f tokens = runParser p tokens >>= \(result, ts) -> Ok (result, ts)
+
+-- (&>>) :: Parser Term -> (Term -> Term -> Term) -> R (Term, [Token]) -> R (Term, [Token])
+-- (&>>) p f state = state >>= \(lhs, ts) -> runParser p ts >>= \(rhs, ts) -> Ok (f lhs rhs, ts)
 
 -- >>> Error "hi" *> pure True
 -- >>> Ok ((), []) *> pure True

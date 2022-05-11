@@ -1,7 +1,7 @@
 {-# LANGUAGE InstanceSigs #-}
 
 module ParserMonad
-  ( Parser,
+  ( Parser (..),
     Token (..),
     getNextToken,
     getLambdaVar,
