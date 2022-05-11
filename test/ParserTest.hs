@@ -33,3 +33,5 @@ spec = do
         `shouldBe` App
           (Abs "a" (App (Abs "b" (App (App (Var "b") (Var "7")) (Var "8"))) (Var "5")))
           (Var "99")
+    it "a (b)" $
+      [lambda| a (b)|] `shouldBe` App (Var "a") (Var "b")

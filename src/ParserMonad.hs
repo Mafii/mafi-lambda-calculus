@@ -108,7 +108,7 @@ test = do
 test2 :: Parser Term
 test2 = do
   var <- getVar <&> Var
-  (getVar <&> Var <&> App var) <|> pure var -- alternative way to write the same thing
+  (getVar <&> Var <&> App var) <|> pure var -- different way to write the same thing
 
 -- >>> runParser test [VarUseOrBind "a", VarUseOrBind "a", VarUseOrBind "a"]
 -- >>> runParser test [VarUseOrBind "a"]
