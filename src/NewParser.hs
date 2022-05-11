@@ -47,12 +47,27 @@ appL :: (Applicative f) => f Term -> f Term -> f Term
 appL = liftA2 App
 
 parseApp :: Parser Term
-parseApp = extend $ appL getNext getNext
+parseApp = createParser $ \ts -> do
+  (lhs, ts) <- runParser getNext ts
+  (rhs, ts) <- runParser getNext ts
+  extend (App lhs rhs) ts
   where
     getNext = parseScope <|> parseAbs <|> parseVar
+    extend term ts = until isDone extend' (Ok (term, ts))
+    extend' :: R (Term, [Token]) -> R (Term, [Token])
+    extend' state = state >>= \(lhs, ts) -> runParser parser ts >>= \(rhs, ts) -> Ok (App lhs rhs, ts)
+    isDone :: R (Term, [Token]) -> Bool
+    isDone s =
+      let tokens = state s
+          isNextBracketOrNull = fmap $ liftA2 (||) isNextBracket null
+       in isNextBracketOrNull tokens `orElse` False
+    isNextBracket :: [Token] -> Bool
+    isNextBracket s = runParser getClosingParenthesis s $> True `orElse` False
+    state :: R (Term, [Token]) -> R [Token]
+    state (Ok (t, ts)) = Ok ts
+    state (Error e) = Error e
 
-extend :: Parser Term -> Parser Term
-extend p = (p <* getClosingParenthesis) <|> (isCompleted >>= \c -> if c then p else appL p parser)
+g
 
 absL :: (Applicative f) => f Id -> f Term -> f Term
 absL = liftA2 Abs
