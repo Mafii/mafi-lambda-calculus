@@ -67,8 +67,6 @@ parseApp = createParser $ \ts -> do
     state (Ok (t, ts)) = Ok ts
     state (Error e) = Error e
 
-g
-
 absL :: (Applicative f) => f Id -> f Term -> f Term
 absL = liftA2 Abs
 
