@@ -1,6 +1,6 @@
 module NewParser (parse, Token (VarUseOrBind, OpenParens, ClosingParens, Dot, Lambda)) where
 
-import Control.Applicative (Alternative ((<|>)), Applicative (liftA2), liftA, liftA3)
+import Control.Applicative (Alternative (many, (<|>)), Applicative (liftA2), liftA, liftA3)
 import Data.Either (fromLeft)
 import qualified Data.Foldable
 import Data.Functor (($>), (<&>))
@@ -9,7 +9,7 @@ import Debug.Trace (trace)
 import Lib (Id, Term (Abs, App, Var))
 import qualified Lib
 import ParserMonad
-  ( Parser (unparser),
+  ( Parser (Parser, unparser),
     Token (..),
     createParser,
     getClosingParenthesis,
@@ -30,12 +30,20 @@ parse = completedOrError . runParser parser . flatMapTokens . tokenize
 -- >>> parse "a b c (d e) f"
 -- >>> parse "((((a))b))c"
 -- >>> parse "(lambda a . (lambda b . b 7 8) 5) 99"
--- ((a b) ((c (d e)) f))
+-- ((((a b) c) (d e)) f)
 -- ((a b) c)
 -- ((λa. ((λb. ((b 7) 8)) 5)) 99)
 
 parser :: Parser Term
-parser = parseApp <|> parseScope <|> parseAbs <|> parseVar
+parser = foldTs $ many (parseScope <|> parseAbs <|> parseVar)
+
+foldTs :: Parser [Term] -> Parser Term
+foldTs p = createParser $ \s -> do
+  (terms, tokens) <- runParser p s
+  case terms of
+    [] -> Error "No terms found, likely empty input"
+    [single] -> Ok (single, tokens)
+    first : terms -> Ok (foldl App first terms, tokens)
 
 parseScope :: Parser Term
 parseScope = getOpeningParenthesis *> parser <* getClosingParenthesis
@@ -43,29 +51,8 @@ parseScope = getOpeningParenthesis *> parser <* getClosingParenthesis
 parseVar :: Parser Term
 parseVar = Var <$> getVar
 
-appL :: (Applicative f) => f Term -> f Term -> f Term
-appL = liftA2 App
-
-parseApp :: Parser Term
-parseApp = createParser $ \ts -> do
-  (lhs, ts) <- runParser getNext ts
-  (rhs, ts) <- runParser getNext ts
-  extend (App lhs rhs) ts
-  where
-    getNext = parseScope <|> parseAbs <|> parseVar
-    extend term ts = until isDone extend' (Ok (term, ts))
-    extend' :: R (Term, [Token]) -> R (Term, [Token])
-    extend' state = state >>= \(lhs, ts) -> runParser parser ts >>= \(rhs, ts) -> Ok (App lhs rhs, ts)
-    isDone :: R (Term, [Token]) -> Bool
-    isDone s =
-      let tokens = state s
-          isNextBracketOrNull = fmap $ liftA2 (||) isNextBracket null
-       in isNextBracketOrNull tokens `orElse` False
-    isNextBracket :: [Token] -> Bool
-    isNextBracket s = runParser getClosingParenthesis s $> True `orElse` False
-    state :: R (Term, [Token]) -> R [Token]
-    state (Ok (t, ts)) = Ok ts
-    state (Error e) = Error e
+-- >>> runParser parser [VarUseOrBind "A", VarUseOrBind "B", VarUseOrBind "C", VarUseOrBind "D"]
+-- ((((A B) C) D),[])
 
 absL :: (Applicative f) => f Id -> f Term -> f Term
 absL = liftA2 Abs
