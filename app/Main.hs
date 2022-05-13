@@ -1,7 +1,7 @@
 module Main where
 
 import Lib
-import NewParser (parse)
+import Parser (parse)
 import Tokenizer (tokenize)
 
 main :: IO ()

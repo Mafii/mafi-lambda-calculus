@@ -11,7 +11,7 @@ import Language.Haskell.TH.Quote (QuasiQuoter (..))
 import Language.Haskell.TH.Syntax (Lift)
 import qualified Language.Haskell.TH.Syntax as TH
 import Lib (Id, Term (Abs, App, Var))
-import qualified NewParser (parse)
+import qualified Parser (parse)
 import ResultMonad (fromOk)
 import Tokenizer
   ( Token
@@ -40,7 +40,7 @@ lambda :: QuasiQuoter
 lambda = λ
 
 parse :: String -> Q TH.Exp
-parse = toExp . fromOk . NewParser.parse
+parse = toExp . fromOk . Parser.parse
 
 -- >>> :t [|Var "a"|]
 -- [|Var "a"|] :: Quote m => m Exp
