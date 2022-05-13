@@ -27,6 +27,7 @@ library
   exposed-modules:
       LCQQ
       Lib
+      NewReducer
       Parser
       ParserMonad
       Playground
