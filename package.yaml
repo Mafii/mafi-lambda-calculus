@@ -21,12 +21,11 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- template-haskell
+- transformers
 
 library:
   source-dirs: src
-  ghc-options:
-  - -package template-haskell
-  - -package transformers
 
 executables:
   mafi-lambda-calculus-exe:
