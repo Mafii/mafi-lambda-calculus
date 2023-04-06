@@ -4,6 +4,7 @@ module Tokenizer
         FunctionAbstractionDot,
         LambdaCharacter,
         LambdaWord,
+        BackslashCharacter,
         Newline,
         OpeningParenthesis,
         Space,
@@ -21,6 +22,7 @@ data Token
   | ClosingParenthesis
   | LambdaCharacter
   | LambdaWord
+  | BackslashCharacter
   | VariableUsageOrBinding String
   | FunctionAbstractionDot
   | Space
@@ -33,6 +35,7 @@ instance Show Token where
   show FunctionAbstractionDot = "<dot>"
   show LambdaCharacter = "λ"
   show LambdaWord = "lambda"
+  show BackslashCharacter = "\\"
   show Space = "<space>"
   show Newline = "<newline>"
   show (VariableUsageOrBinding id) = "<var " ++ id ++ ">"
@@ -46,6 +49,7 @@ tokenize' "" xs = xs
 -- if weird errors happen, add setLocaleEncoding utf8 to your code ahead of running this tokenizer
 tokenize' ('\955' : restOfString) tokens = tokenize' restOfString (tokens ++ [LambdaCharacter])
 tokenize' ('l' : 'a' : 'm' : 'b' : 'd' : 'a' : restOfString) tokens = tokenize' restOfString (tokens ++ [LambdaWord])
+tokenize' ('\\' : restOfString) tokens = tokenize' restOfString (tokens ++ [BackslashCharacter])
 tokenize' ('(' : restOfString) tokens = tokenize' restOfString (tokens ++ [OpeningParenthesis])
 tokenize' (')' : restOfString) tokens = tokenize' restOfString (tokens ++ [ClosingParenthesis])
 tokenize' ('.' : restOfString) tokens = tokenize' restOfString (tokens ++ [FunctionAbstractionDot])
