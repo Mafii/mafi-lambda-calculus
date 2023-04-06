@@ -24,6 +24,11 @@ dependencies:
 - template-haskell
 - transformers
 
+ghc-options:
+- -Wincomplete-patterns
+#- -Wunused-imports
+#- -Wunused-matches
+
 library:
   source-dirs: src
 
