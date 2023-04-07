@@ -97,22 +97,3 @@ instance Monad Parser where
     StateT $ \s -> do
       (a', s') <- runParser a s
       runParser (fa a') s'
-
--- manual tests
-
-test :: Parser Term
-test = do
-  var <- getVar <&> Var
-  (getVar <&> App var . Var) <|> pure var
-
-test2 :: Parser Term
-test2 = do
-  var <- getVar <&> Var
-  (getVar <&> Var <&> App var) <|> pure var -- different way to write the same thing
-
--- >>> runParser test [VarUseOrBind "a", VarUseOrBind "a", VarUseOrBind "a"]
--- >>> runParser test [VarUseOrBind "a"]
--- >>> runParser test [OpenParens]
--- ((a a),[VarUseOrBind "a"])
--- (a,[])
--- Expected variable but got: OpenParens

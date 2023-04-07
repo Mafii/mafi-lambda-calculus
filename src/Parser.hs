@@ -25,7 +25,7 @@ import Tokenizer (tokenize)
 import qualified Tokenizer (Token (..), tokenize)
 
 parse :: String -> R Term
-parse = completedOrError . runParser parser . flatMapTokens . tokenize
+parse = ensureComplete . runParser parser . flatMapTokens . tokenize
 
 parser :: Parser Term
 parser = foldt <$> some (parseScope <|> parseAbs <|> parseVar)
@@ -43,8 +43,6 @@ parseVar = Var <$> getVar
 parseAbs :: Parser Term
 parseAbs = liftA2 Abs getLambdaVar parser
 
--- external to internal token handling
-
 flatMapTokens :: [Tokenizer.Token] -> [Token]
 flatMapTokens = flatMap mapToken
   where
@@ -61,8 +59,7 @@ mapToken Tokenizer.Newline = Nothing
 mapToken Tokenizer.Space = Nothing
 mapToken (Tokenizer.VariableUsageOrBinding id) = Just $ VarUseOrBind id
 
--- basically a sanity check
-completedOrError :: (Show a) => R (a, [Token]) -> R a
-completedOrError (Ok (a, [])) = Ok a
-completedOrError (Ok (a, ts)) = Error $ "Partial result: " ++ show a ++ ", but unhandled tokens: " ++ show ts
-completedOrError (Error a) = Error a
+ensureComplete :: (Show a) => R (a, [Token]) -> R a
+ensureComplete (Ok (a, [])) = Ok a
+ensureComplete (Ok (a, ts)) = Error $ "Partial result: " ++ show a ++ ", but unhandled tokens: " ++ show ts
+ensureComplete (Error a) = Error a
