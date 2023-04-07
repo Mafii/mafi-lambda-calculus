@@ -39,7 +39,6 @@ tokenize ('.' : rest) = FunctionAbstractionDot : tokenize rest
 tokenize (' ' : rest) = Space : tokenize rest
 tokenize ('\n' : rest) = Newline : tokenize rest
 tokenize (c : rest) = case tokenize rest of
-  [] -> [VariableUsageOrBinding [c]]
   ((VariableUsageOrBinding id) : ts) -> VariableUsageOrBinding (c : id) : ts
   ts -> VariableUsageOrBinding [c] : ts
 
