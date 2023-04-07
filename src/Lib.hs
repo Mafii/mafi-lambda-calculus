@@ -1,18 +1,13 @@
-module Lib
-  ( Id,
-    Term (Var, App, Abs),
-    showPretty,
-  )
-where
+module Lib (Id, Term (Var, App, Abs), showPretty) where
 
 type Id = String
 
 data Term
-  = Var Id -- Variables
-  | Abs Id Term -- Abstractions
-  | App Term Term -- Applications
+  = Var Id
+  | Abs Id Term
+  | App Term Term
 
--- not alpha eq by design, so we can test parser
+-- not alpha eqivalence by choice
 instance Eq Term where
   (==) (Var lhs) (Var rhs) = lhs == rhs
   (==) (Abs id term) (Abs id' term') = term == term' && id == id'
@@ -22,8 +17,7 @@ instance Eq Term where
 instance Show Term where
   show (Var v) = v
   show (Abs id term) = "(λ" ++ id ++ ". " ++ show term ++ ")"
-  -- show (App term term') = show term ++ " " ++ show term'
-  show (App term term') = "(" ++ show term ++ " " ++ show term' ++ ")" -- easier to argue about
+  show (App term term') = "(" ++ show term ++ " " ++ show term' ++ ")" -- easier to argue about than without parenthesis 
 
 showPretty :: Term -> String
 showPretty (Var v) = v

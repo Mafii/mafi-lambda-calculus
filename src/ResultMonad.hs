@@ -35,27 +35,11 @@ instance Alternative R where
 
 instance MonadPlus R
 
--- >>> Ok "2" >>= return . (++ "2")
--- >>> Error "2" >>= return . (++ "2")
--- "22"
--- 2
-
--- just like fromJust of Maybe
 fromOk :: R a -> a
 fromOk (Ok a) = a
 fromOk (Error e) = error $ "R.fromOk: " ++ e
 
 infixl 0 `orElse`
-
--- ra `orElse` pure . b is equal to ra <|> pure . b
-
--- >>> ((Error "asdf") <|> pure "hey") == ((Error "asdf") `orElse` pure "hey")
--- True
-
--- >>> ((Error "asdf") `orElse` "hey")
--- >>> (Ok "lhs there") `orElse` "hey"
--- "hey"
--- "lhs there"
 
 orElse :: R a -> a -> a
 orElse (Ok a) _ = a

@@ -3,8 +3,7 @@
 module LibTest where
 
 import LCQQ (λ)
-import Lib (Term (Abs, App, Var), showPretty)
-import Reducer (alphaEq, reduce)
+import Lib (showPretty)
 import Test.Hspec (Spec, describe, it, shouldBe)
 
 spec :: Spec

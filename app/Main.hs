@@ -1,8 +1,6 @@
 module Main where
 
-import Lib
 import Parser (parse)
-import Tokenizer (tokenize)
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
 main :: IO ()

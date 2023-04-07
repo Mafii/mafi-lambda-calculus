@@ -16,9 +16,8 @@ where
 
 import Control.Applicative (Alternative)
 import Control.Monad.Trans.State.Strict (StateT (StateT, runStateT))
-import Data.Functor ((<&>))
 import GHC.Base (Alternative (empty, (<|>)))
-import Lib (Id, Term (..))
+import Lib (Id)
 import ResultMonad (R (..))
 
 data Token
@@ -29,10 +28,6 @@ data Token
   | VarUseOrBind String
   deriving (Show)
 
--- I found this article when I struggled with implementing Applicative and Monad for my type.
--- The rest of the code is inspired by the article and the paper mentioned there:
--- https://vaibhavsagar.com/blog/2018/02/04/revisiting-monadic-parsing-haskell/
--- I wanted to use R(esult Monad) instead of Maybe for error messages.
 newtype Parser a = Parser {unparser :: StateT [Token] R a}
 
 createParser :: ([Token] -> R (a, [Token])) -> Parser a
@@ -97,22 +92,3 @@ instance Monad Parser where
     StateT $ \s -> do
       (a', s') <- runParser a s
       runParser (fa a') s'
-
--- manual tests
-
-test :: Parser Term
-test = do
-  var <- getVar <&> Var
-  (getVar <&> App var . Var) <|> pure var
-
-test2 :: Parser Term
-test2 = do
-  var <- getVar <&> Var
-  (getVar <&> Var <&> App var) <|> pure var -- different way to write the same thing
-
--- >>> runParser test [VarUseOrBind "a", VarUseOrBind "a", VarUseOrBind "a"]
--- >>> runParser test [VarUseOrBind "a"]
--- >>> runParser test [OpenParens]
--- ((a a),[VarUseOrBind "a"])
--- (a,[])
--- Expected variable but got: OpenParens
