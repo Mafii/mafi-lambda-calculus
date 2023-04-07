@@ -10,6 +10,7 @@ data Token
   | FunctionAbstractionDot
   | Space
   | Newline
+  | Comment String
   deriving (Eq)
 
 instance Show Token where
@@ -22,14 +23,16 @@ instance Show Token where
   show Space = "<space>"
   show Newline = "<newline>"
   show (VariableUsageOrBinding id) = "<var " ++ id ++ ">"
+  show (Comment s) = "#" ++ s
 
 tokenize :: String -> [Token]
 tokenize text = tokenize' text []
 
 tokenize' :: String -> [Token] -> [Token]
 tokenize' "" xs = xs
--- character λ does not work, encoded variant must be used (but it works in (probably unicode that's why) strings)
--- if weird errors happen, add setLocaleEncoding utf8 to your code ahead of running this tokenizer
+tokenize' ('#' : rest) tokens = tokenize' rest' (tokens ++ [Comment commentText])
+  where
+    (commentText, rest') = break (== '\n') rest
 tokenize' ('\955' : restOfString) tokens = tokenize' restOfString (tokens ++ [LambdaCharacter])
 tokenize' ('l' : 'a' : 'm' : 'b' : 'd' : 'a' : restOfString) tokens = tokenize' restOfString (tokens ++ [LambdaWord])
 tokenize' ('\\' : restOfString) tokens = tokenize' restOfString (tokens ++ [BackslashCharacter])
