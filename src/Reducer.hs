@@ -1,7 +1,3 @@
-{-# HLINT ignore "Unused LANGUAGE pragma" #-}
-{-# HLINT ignore "Use list comprehension" #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
 module Reducer (reduce, alphaEq) where
 
 import Lib (Id, Term (Abs, App, Var))
@@ -23,7 +19,7 @@ getFreeVariables term = get term []
     get term knownBinds
       | (Abs id body) <- term = get body $ id : knownBinds
       | (App lhs rhs) <- term = get lhs knownBinds ++ get rhs knownBinds
-      | (Var id) <- term = if id `elem` knownBinds then [] else [id]
+      | (Var id) <- term = filter (`notElem` knownBinds) [id]
 
 isFreeIn :: Id -> Term -> Bool
 isFreeIn id term = elem id $ getFreeVariables term
@@ -93,7 +89,7 @@ replaceBindsConflictingWithFreeVariables (App abs@(Abs id body) rhs) = do
     replaceConflicts term f -- f is the new id factory
       | (Abs id body) <- term = createAbs id f body
       | (App lhs rhs) <- term = App (replaceConflicts lhs f) (replaceConflicts rhs f)
-      | var@(Var{}) <- term = var
+      | var@(Var {}) <- term = var
     createAbs :: Id -> (Id -> Id) -> Term -> Term
     createAbs oldId newIdFactory body = do
       let newId = newIdFactory oldId
