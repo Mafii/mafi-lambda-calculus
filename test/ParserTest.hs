@@ -33,6 +33,14 @@ spec = do
           (Var "99")
     it "a (b)" $
       [lambda| a (b)|] `shouldBe` App (Var "a") (Var "b")
-  describe "Syntax" $
+  describe "Syntax" $ do
     it "Backslash is equal to unicode lambda" $
       parse "\\x.x" == parse "λx.x"
+    it "Expressions can span across multiple lines" $
+      parse "\\x.\nx" == parse "\\x.x"
+    it "Empty lines are ignored" $
+      parse "\n\\x.x" == parse "\\x.x"
+    it "Line comment is equal to empty line" $
+      parse "# hello there\n\\x.x" == parse "\\x.x"
+    it "Line can contain comment that spans until end of line" $
+      parse "\\x. # hello there\nx" == parse "\\x.x"
