@@ -3,6 +3,7 @@ import qualified LibTest (spec)
 import qualified ParserTest (spec)
 import qualified ReducerTest (spec)
 import Test.Hspec (Spec, describe, hspec)
+import qualified TokenizerTest (spec)
 
 main :: IO ()
 main = do
@@ -11,6 +12,7 @@ main = do
 
 spec :: Spec
 spec = do
+  describe "Tokenizer Tests" TokenizerTest.spec
   describe "Parser Tests" ParserTest.spec
   describe "Reducer Tests" ReducerTest.spec
   describe "Lib Tests" LibTest.spec
