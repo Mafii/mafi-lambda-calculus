@@ -56,6 +56,7 @@ mapToken Tokenizer.ClosingParenthesis = Just ClosingParens
 mapToken Tokenizer.FunctionAbstractionDot = Just Dot
 mapToken Tokenizer.LambdaCharacter = Just Lambda
 mapToken Tokenizer.LambdaWord = Just Lambda
+mapToken Tokenizer.BackslashCharacter = Just Lambda
 mapToken Tokenizer.Newline = Nothing
 mapToken Tokenizer.Space = Nothing
 mapToken (Tokenizer.VariableUsageOrBinding id) = Just $ VarUseOrBind id

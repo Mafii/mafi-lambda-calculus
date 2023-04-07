@@ -5,6 +5,7 @@ module ParserTest where
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import LCQQ (lambda, λ)
 import Lib (Term (Abs, App, Var))
+import Parser (parse)
 import Test.Hspec (Spec, describe, it, shouldBe)
 
 -- uses NewParser over Parser now.
@@ -35,3 +36,6 @@ spec = do
           (Var "99")
     it "a (b)" $
       [lambda| a (b)|] `shouldBe` App (Var "a") (Var "b")
+  describe "Syntax" $
+    it "Backslash is equal to unicode lambda" $
+      parse "\\x.x" == parse "λx.x"
