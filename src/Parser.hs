@@ -1,4 +1,4 @@
-module Parser (parse, Token (VarUseOrBind, OpenParens, ClosingParens, Dot, Lambda)) where
+module Parser (parse, Token (..)) where
 
 import Control.Applicative (Alternative (many, some, (<|>)), Applicative (liftA2), liftA, liftA3)
 import Data.Either (fromLeft)

@@ -1,18 +1,4 @@
-module Tokenizer
-  ( Token
-      ( ClosingParenthesis,
-        FunctionAbstractionDot,
-        LambdaCharacter,
-        LambdaWord,
-        BackslashCharacter,
-        Newline,
-        OpeningParenthesis,
-        Space,
-        VariableUsageOrBinding
-      ),
-    tokenize,
-  )
-where
+module Tokenizer (tokenize, Token (..)) where
 
 import Data.Char (isSpace)
 

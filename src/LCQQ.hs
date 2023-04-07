@@ -13,19 +13,7 @@ import qualified Language.Haskell.TH.Syntax as TH
 import Lib (Id, Term (Abs, App, Var))
 import qualified Parser (parse)
 import ResultMonad (fromOk)
-import Tokenizer
-  ( Token
-      ( ClosingParenthesis,
-        FunctionAbstractionDot,
-        LambdaCharacter,
-        LambdaWord,
-        Newline,
-        OpeningParenthesis,
-        Space,
-        VariableUsageOrBinding
-      ),
-    tokenize,
-  )
+import Tokenizer (Token (..), tokenize)
 
 λ :: QuasiQuoter
 λ =
@@ -42,18 +30,6 @@ lambda = λ
 parse :: String -> Q TH.Exp
 parse = toExp . fromOk . Parser.parse
 
--- >>> :t [|Var "a"|]
--- [|Var "a"|] :: Quote m => m Exp
-
--- >>> :t [|App (Var "a") (Var "b")|]
--- [|App (Var "a") (Var "b")|] :: Quote m => m Exp
-
--- >>> [|App (Var "a") (Var "b")|]
--- AppE (AppE (ConE Lib.App) (AppE (ConE Lib.Var) (LitE (StringL "a")))) (AppE (ConE Lib.Var) (LitE (StringL "b")))
-
--- >>> :t [|Abs "a" (Var "a")|]
--- [|Abs "a" (Var "a")|] :: Quote m => m Exp
-
 toExp :: TH.Quote m => Term -> m Exp
 toExp (Var id) = [|Var id|]
 toExp (Abs id term) = do
@@ -65,6 +41,3 @@ toExp (App term term') = do
   exp <- toExp term
   exp' <- toExp term'
   return $ TH.AppE (TH.AppE conE exp) exp'
-
--- >>> toExp $ fromOk $ (NewParser.parse "lambda a. a b")
--- AppE (AppE (ConE Lib.Abs) (ListE [LitE (CharL 'a')])) (AppE (AppE (ConE Lib.App) (AppE (ConE Lib.Var) (ListE [LitE (CharL 'a')]))) (AppE (ConE Lib.Var) (ListE [LitE (CharL 'b')])))
