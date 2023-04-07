@@ -2,7 +2,6 @@
 
 module ReducerTest where
 
-import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import LCQQ (λ)
 import Lib (Term (Abs, App, Var))
 import Reducer (alphaEq, reduce)
@@ -10,7 +9,6 @@ import Test.Hspec (Spec, describe, it, shouldBe)
 
 spec :: Spec
 spec = do
-  let _ = setLocaleEncoding utf8
   describe "Basic requirements for testat" $ do
     it "Identity lambda is reduced to value when value is applied" $ do
       reduce [λ| (λx.x) whatever |] `shouldBe` [λ| whatever |]

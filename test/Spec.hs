@@ -9,10 +9,12 @@ import qualified ReducerTest (spec)
 import Test.Hspec (Spec, describe, hspec, it, shouldBe)
 
 main :: IO ()
-main = hspec spec
+main = do
+  setLocaleEncoding utf8
+  hspec spec
 
 spec :: Spec
 spec = do
-  describe "(New)Parser Tests" ParserTest.spec
+  describe "Parser Tests" ParserTest.spec
   describe "Reducer Tests" ReducerTest.spec
   describe "Lib Tests" LibTest.spec
