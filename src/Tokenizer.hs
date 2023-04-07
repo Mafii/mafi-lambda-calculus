@@ -1,7 +1,5 @@
 module Tokenizer (tokenize, Token (..)) where
 
-import Data.Char (isSpace)
-
 data Token
   = OpeningParenthesis
   | ClosingParenthesis

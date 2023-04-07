@@ -1,12 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
-import LCQQ (lambda, λ)
-import Lib (Term (Abs, App, Var))
 import qualified LibTest (spec)
 import qualified ParserTest (spec)
 import qualified ReducerTest (spec)
-import Test.Hspec (Spec, describe, hspec, it, shouldBe)
+import Test.Hspec (Spec, describe, hspec)
 
 main :: IO ()
 main = do

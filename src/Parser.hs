@@ -1,12 +1,8 @@
 module Parser (parse, Token (..)) where
 
-import Control.Applicative (Alternative (many, some, (<|>)), Applicative (liftA2), liftA, liftA3)
-import Data.Either (fromLeft)
 import qualified Data.Foldable
-import Data.Functor (($>), (<&>))
-import Data.Maybe (fromJust)
-import Debug.Trace (trace)
-import Lib (Id, Term (Abs, App, Var))
+import Control.Applicative (some, liftA2, (<|>))
+import Lib (Term (Abs, App, Var))
 import qualified Lib
 import ParserMonad
   ( Parser (Parser, unparser),
@@ -20,9 +16,9 @@ import ParserMonad
     isCompleted,
     runParser,
   )
-import ResultMonad (R (Error, Ok), fromOk, orElse)
+import ResultMonad (R (Error, Ok))
 import Tokenizer (tokenize)
-import qualified Tokenizer (Token (..), tokenize)
+import qualified Tokenizer (Token (..))
 
 parse :: String -> R Term
 parse = ensureComplete . runParser parser . flatMapTokens . tokenize
