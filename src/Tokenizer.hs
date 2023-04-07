@@ -30,7 +30,7 @@ tokenize "" = []
 tokenize ('#' : rest) = Comment commentText : tokenize rest'
   where
     (commentText, rest') = break (== '\n') rest
-tokenize ('\955' : rest) = LambdaCharacter : tokenize rest
+tokenize ('λ' : rest) = LambdaCharacter : tokenize rest
 tokenize ('l' : 'a' : 'm' : 'b' : 'd' : 'a' : rest) = LambdaWord : tokenize rest
 tokenize ('\\' : rest) = BackslashCharacter : tokenize rest
 tokenize ('(' : rest) = OpeningParenthesis : tokenize rest
