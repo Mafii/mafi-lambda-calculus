@@ -41,11 +41,3 @@ tokenize ('\n' : rest) = Newline : tokenize rest
 tokenize (c : rest) = case tokenize rest of
   ((VariableUsageOrBinding id) : ts) -> VariableUsageOrBinding (c : id) : ts
   ts -> VariableUsageOrBinding [c] : ts
-
-isVariable :: Token -> Bool
-isVariable (VariableUsageOrBinding _) = True
-isVariable _ = False
-
-appendCharToTokenText :: Token -> Char -> Token
-appendCharToTokenText (VariableUsageOrBinding t) c = VariableUsageOrBinding (t ++ [c])
-appendCharToTokenText _ _ = error "only defined for variables"
