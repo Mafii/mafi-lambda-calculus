@@ -15,7 +15,6 @@ module Tokenizer
 where
 
 import Data.Char (isSpace)
-import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
 data Token
   = OpeningParenthesis
@@ -71,11 +70,3 @@ isVariable _ = False
 appendCharToTokenText :: Token -> Char -> Token
 appendCharToTokenText (VariableUsageOrBinding t) c = VariableUsageOrBinding (t ++ [c])
 appendCharToTokenText _ _ = error "only defined for variables"
-
--- >>> setLocaleEncoding utf8
--- >>> tokenize "a"
--- >>> tokenize "λa. a b"
--- >>> tokenize "(λb . (λa. a b)) 5"
--- [<var a>]
--- [λ,<var a>,<dot>,<space>,<var a>,<space>,<var b>]
--- [(,λ,<var b>,<space>,<dot>,<space>,(,λ,<var a>,<dot>,<space>,<var a>,<space>,<var b>,),),<space>,<var 5>]
