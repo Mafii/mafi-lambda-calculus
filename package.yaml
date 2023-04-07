@@ -1,7 +1,7 @@
 name:                mafi-lambda-calculus
 version:             0.1.0.0
 github:              "Mafii/mafi-lambda-calculus"
-license:             ""
+license:             "WTFPL"
 author:              "Mathias Fischler"
 copyright:           "2022-2023 Mathias Fischler"
 
