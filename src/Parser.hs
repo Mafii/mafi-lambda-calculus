@@ -1,7 +1,7 @@
 module Parser (parse, Token (..)) where
 
+import Control.Applicative (liftA2, some, (<|>))
 import qualified Data.Foldable
-import Control.Applicative (some, liftA2, (<|>))
 import Lib (Term (Abs, App, Var))
 import ParserMonad (Parser, Token (..), getClosingParenthesis, getLambdaVar, getOpeningParenthesis, getVar, runParser)
 import ResultMonad (R (Error, Ok))
@@ -42,6 +42,7 @@ mapToken Tokenizer.BackslashCharacter = Just Lambda
 mapToken Tokenizer.Newline = Nothing
 mapToken Tokenizer.Space = Nothing
 mapToken (Tokenizer.VariableUsageOrBinding id) = Just $ VarUseOrBind id
+mapToken Tokenizer.Comment {} = Nothing
 
 ensureComplete :: (Show a) => R (a, [Token]) -> R a
 ensureComplete (Ok (a, [])) = Ok a

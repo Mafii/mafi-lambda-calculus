@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import qualified LibTest (spec)
 import qualified ParserTest (spec)
