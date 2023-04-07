@@ -9,7 +9,7 @@ data R a
 
 instance Functor R where
   fmap f (Ok a) = pure $ f a
-  fmap f (Error e) = Error e
+  fmap _ (Error e) = Error e
 
 instance Applicative R where
   pure = Ok
@@ -17,7 +17,7 @@ instance Applicative R where
 
 instance Monad R where
   (>>=) (Ok a) f = f a
-  (>>=) (Error e) f = Error e
+  (>>=) (Error e) _ = Error e
 
 instance (Show a) => Show (R a) where
   show (Error e) = e
@@ -29,7 +29,7 @@ instance (Eq a) => Eq (R a) where
 
 instance Alternative R where
   empty = Error "uninitialized result monad"
-  (Error e) <|> (Ok a) = Ok a
+  (Error _) <|> (Ok a) = Ok a
   (Ok a) <|> _ = Ok a
   (Error e) <|> (Error _) = Error e
 
@@ -43,4 +43,4 @@ infixl 0 `orElse`
 
 orElse :: R a -> a -> a
 orElse (Ok a) _ = a
-orElse (Error e) a = a
+orElse (Error _) a = a
