@@ -7,8 +7,8 @@ module Reducer (reduce, alphaEq) where
 import Lib (Id, Term (Abs, App, Var))
 
 reduce :: Term -> Term
-reduce var@(Var id) = var
-reduce app@(App (Abs id body) rhs) = reduce $ betaReduce app
+reduce var@(Var _) = var
+reduce app@(App (Abs {}) _) = reduce $ betaReduce app
 reduce val = val
 
 -- "free variable" ^= variable that is captured from outer scope
@@ -30,7 +30,7 @@ isFreeIn id term = elem id $ getFreeVariables term
 
 getBoundVariables :: Term -> [Id]
 getBoundVariables (Abs id body) = id : getBoundVariables body
-getBoundVariables (Var id) = []
+getBoundVariables (Var {}) = []
 getBoundVariables (App lhs rhs) = getBoundVariables lhs ++ getBoundVariables rhs
 
 isBoundIn :: Id -> Term -> Bool
@@ -67,16 +67,16 @@ getNonConflictingIdentifier term term' identifierBase = do
   identifierBase ++ show number
 
 betaReduce :: Term -> Term
-betaReduce app@(App (Abs id body) rhs) = do
+betaReduce app@(App (Abs {}) _) = do
   let fixed = replaceBindsConflictingWithFreeVariables app
   let newId = getId fixed -- could be improved with deconstruction in fixed: let (newId, newBody, fixedRhs) = ...
   let newBody = getBody fixed
   let fixedRhs = getRhs fixed
   replaceIdWithConcreteValue newBody newId fixedRhs
   where
-    getId (App (Abs id body) _) = id
+    getId (App (Abs id _) _) = id
     getId _ = error "invalid usecase"
-    getBody (App (Abs id body) _) = body
+    getBody (App (Abs _ body) _) = body
     getBody _ = error "invalid usecase"
     getRhs (App (Abs {}) rhs) = rhs
     getRhs _ = error "invalid usecase"
@@ -93,7 +93,7 @@ replaceBindsConflictingWithFreeVariables (App abs@(Abs id body) rhs) = do
     replaceConflicts term f -- f is the new id factory
       | (Abs id body) <- term = createAbs id f body
       | (App lhs rhs) <- term = App (replaceConflicts lhs f) (replaceConflicts rhs f)
-      | var@(Var id) <- term = var
+      | var@(Var{}) <- term = var
     createAbs :: Id -> (Id -> Id) -> Term -> Term
     createAbs oldId newIdFactory body = do
       let newId = newIdFactory oldId

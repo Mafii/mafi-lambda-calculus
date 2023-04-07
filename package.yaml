@@ -25,7 +25,7 @@ dependencies:
 ghc-options:
 - -Wincomplete-patterns
 - -Wunused-imports
-#- -Wunused-matches
+- -Wunused-matches
 
 library:
   source-dirs: src
