@@ -8,7 +8,6 @@ import Lib (Term (Abs, App, Var))
 import Parser (parse)
 import Test.Hspec (Spec, describe, it, shouldBe)
 
--- uses NewParser over Parser now.
 spec :: Spec
 spec = do
   let _ = setLocaleEncoding utf8
