@@ -26,34 +26,18 @@ instance Show Token where
   show (Comment s) = "#" ++ s
 
 tokenize :: String -> [Token]
-tokenize text = tokenize' text []
-
-tokenize' :: String -> [Token] -> [Token]
-tokenize' "" xs = xs
-tokenize' ('#' : rest) tokens = tokenize' rest' (tokens ++ [Comment commentText])
+tokenize "" = []
+tokenize ('#' : rest) = Comment commentText : tokenize rest'
   where
     (commentText, rest') = break (== '\n') rest
-tokenize' ('\955' : restOfString) tokens = tokenize' restOfString (tokens ++ [LambdaCharacter])
-tokenize' ('l' : 'a' : 'm' : 'b' : 'd' : 'a' : restOfString) tokens = tokenize' restOfString (tokens ++ [LambdaWord])
-tokenize' ('\\' : restOfString) tokens = tokenize' restOfString (tokens ++ [BackslashCharacter])
-tokenize' ('(' : restOfString) tokens = tokenize' restOfString (tokens ++ [OpeningParenthesis])
-tokenize' (')' : restOfString) tokens = tokenize' restOfString (tokens ++ [ClosingParenthesis])
-tokenize' ('.' : restOfString) tokens = tokenize' restOfString (tokens ++ [FunctionAbstractionDot])
-tokenize' (' ' : restOfString) tokens = tokenize' restOfString (tokens ++ [Space])
-tokenize' ('\n' : restOfString) tokens = tokenize' restOfString (tokens ++ [Newline])
-tokenize' (s : ss) [] = tokenize' ss [VariableUsageOrBinding [s]]
-tokenize' (s : ss) tokens =
-  tokenize'
-    ss
-    ( if isVariable (last tokens)
-        then init tokens ++ [appendCharToTokenText (last tokens) s]
-        else tokens ++ [VariableUsageOrBinding [s]]
-    )
-
-isVariable :: Token -> Bool
-isVariable (VariableUsageOrBinding _) = True
-isVariable _ = False
-
-appendCharToTokenText :: Token -> Char -> Token
-appendCharToTokenText (VariableUsageOrBinding t) c = VariableUsageOrBinding (t ++ [c])
-appendCharToTokenText _ _ = error "only defined for variables"
+tokenize ('λ' : rest) = LambdaCharacter : tokenize rest
+tokenize ('l' : 'a' : 'm' : 'b' : 'd' : 'a' : rest) = LambdaWord : tokenize rest
+tokenize ('\\' : rest) = BackslashCharacter : tokenize rest
+tokenize ('(' : rest) = OpeningParenthesis : tokenize rest
+tokenize (')' : rest) = ClosingParenthesis : tokenize rest
+tokenize ('.' : rest) = FunctionAbstractionDot : tokenize rest
+tokenize (' ' : rest) = Space : tokenize rest
+tokenize ('\n' : rest) = Newline : tokenize rest
+tokenize (c : rest) = case tokenize rest of
+  ((VariableUsageOrBinding id) : ts) -> VariableUsageOrBinding (c : id) : ts
+  ts -> VariableUsageOrBinding [c] : ts
