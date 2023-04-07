@@ -16,9 +16,8 @@ where
 
 import Control.Applicative (Alternative)
 import Control.Monad.Trans.State.Strict (StateT (StateT, runStateT))
-import Data.Functor ((<&>))
 import GHC.Base (Alternative (empty, (<|>)))
-import Lib (Id, Term (..))
+import Lib (Id)
 import ResultMonad (R (..))
 
 data Token

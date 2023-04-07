@@ -4,7 +4,6 @@
 
 module Reducer (reduce, alphaEq) where
 
-import Data.List (nub)
 import Lib (Id, Term (Abs, App, Var))
 
 reduce :: Term -> Term
