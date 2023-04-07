@@ -3,19 +3,7 @@ module Parser (parse, Token (..)) where
 import qualified Data.Foldable
 import Control.Applicative (some, liftA2, (<|>))
 import Lib (Term (Abs, App, Var))
-import qualified Lib
-import ParserMonad
-  ( Parser (Parser, unparser),
-    Token (..),
-    createParser,
-    getClosingParenthesis,
-    getLambdaVar,
-    getNextToken,
-    getOpeningParenthesis,
-    getVar,
-    isCompleted,
-    runParser,
-  )
+import ParserMonad (Parser, Token (..), getClosingParenthesis, getLambdaVar, getOpeningParenthesis, getVar, runParser)
 import ResultMonad (R (Error, Ok))
 import Tokenizer (tokenize)
 import qualified Tokenizer (Token (..))
