@@ -15,3 +15,5 @@ spec = do
       reduce [λ| (λx.x) whatever |] (ReduceInstruction LeftmostOutermost 0) `shouldBe` [λ| (λx.x) whatever |]
     it "Identity lambda is reduced to value when value is applied within one step" $ do
       reduce [λ| (λx.x) whatever |] (ReduceInstruction LeftmostOutermost 1) `shouldBe` [λ| whatever |]
+    it "Endless recursion stops correctly at max steps" $ do
+      reduce [λ| (λx.x x) (λx.x x) |] (ReduceInstruction LeftmostOutermost 50) `shouldBe` [λ| (λx.x x) (λx.x x) |]
