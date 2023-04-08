@@ -15,12 +15,36 @@ spec :: Spec
 spec = do
   spec' LeftmostOutermost maxReductionAttempts
   spec' LeftmostInnermost maxReductionAttempts
+  describe "Leftmost Outermost Single Step Verification" $ do
+    it "Steps are equal to reference example" $ do
+      let strategy = LeftmostOutermost
+      let initial = [λ| (λa.a) ((λa.a) x)((λb.b) y) |]
+      let firstReduction = [λ| ((λa.a) x)((λb.b) y) |]
+      reduce initial strategy 1 `shouldBe` firstReduction
+      let secondReduction = [λ| (x)((λb.b) y) |]
+      reduce firstReduction strategy 1 `shouldBe` secondReduction
+      let thirdReduction = [λ| (x)(y) |]
+      reduce secondReduction strategy 1 `shouldBe` thirdReduction
+  describe "Leftmost Innermost Single Step Verification" $ do
+    it "Steps are equal to reference example" $ do
+      let strategy = LeftmostInnermost
+      let initial = [λ| (λa.a) ((λa.a) x)((λb.b) y) |]
+      let firstReduction = [λ| (λa.a) (x)((λb.b) y) |]
+      reduce initial strategy 1 `shouldBe` firstReduction
+      let secondReduction = [λ| (λa.a) (x)(y) |]
+      reduce firstReduction strategy 1 `shouldBe` secondReduction
+      let thirdReduction = [λ| (x)(y) |]
+      reduce secondReduction strategy 1 `shouldBe` thirdReduction
 
 spec' :: Strategy -> MaxSteps -> Spec
 spec' strategy maxSteps = do
   describe ("Step by Step reduction with strategy " ++ show strategy) $ do
     it "Reduction with 0 steps is identity operation" $ do
-      reduce [λ| (λx.x) whatever |] strategy 0 `shouldBe` [λ| (λx.x) whatever |]
+      reduce
+        [λ| (λx.x) whatever |]
+        strategy
+        0
+        `shouldBe` [λ| (λx.x) whatever |]
     it "Identity lambda is reduced to value when value is applied within one step" $ do
       reduce [λ| (λx.x) whatever |] strategy 1 `shouldBe` [λ| whatever |]
     it "Identity lambda reduction still works with higher max steps allowed" $ do
