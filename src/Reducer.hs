@@ -1,4 +1,4 @@
-module Reducer (reduce, alphaEq) where
+module Reducer (reduce, alphaEq, betaReduce) where
 
 import Lib (Id, Term (Abs, App, Var))
 
