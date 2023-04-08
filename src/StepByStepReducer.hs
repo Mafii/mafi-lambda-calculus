@@ -1,14 +1,6 @@
--- for comment evaluation during development
-{-# HLINT ignore "Unused LANGUAGE pragma" #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
-
 module StepByStepReducer (reduce, ReduceInstruction (..), Strategy (..), Steps) where
 
-import GHC.Base (undefined)
-import LCQQ (lambda, λ)
-import Lib (Id, Term (Abs, App, Var))
+import Lib (Term (Abs, App, Var))
 import Reducer (betaReduce)
 
 data Strategy = LeftmostOutermost | LeftmostInnermost
@@ -31,6 +23,3 @@ reduce1 var@Var {} = var
 reduce1 (Abs id term) = Abs id (reduce1 term)
 reduce1 app@(App (Abs {}) _) = betaReduce app
 reduce1 (App lhs rhs) = App (reduce1 lhs) rhs
-
--- >>> True
--- True
