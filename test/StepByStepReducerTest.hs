@@ -5,20 +5,20 @@ module StepByStepReducerTest where
 import LCQQ (λ)
 import Lib (Term (..))
 import qualified Reducer (alphaEq)
-import StepByStepReducer (ReduceInstruction (..), Strategy (..), reduce)
+import StepByStepReducer (Strategy (..), reduce)
 import Test.Hspec (Spec, describe, it, shouldBe)
 
 spec :: Spec
 spec = do
   describe "Step by Step reduction" $ do
     it "Reduction with 0 steps is identity operation with LeftmostInnermost" $ do
-      reduce [λ| (λx.x) whatever |] (ReduceInstruction LeftmostInnermost 0) `shouldBe` [λ| (λx.x) whatever |]
+      reduce [λ| (λx.x) whatever |] LeftmostInnermost 0 `shouldBe` [λ| (λx.x) whatever |]
     it "Reduction with 0 steps is identity operation with LeftmostOutermost" $ do
-      reduce [λ| (λx.x) whatever |] (ReduceInstruction LeftmostOutermost 0) `shouldBe` [λ| (λx.x) whatever |]
+      reduce [λ| (λx.x) whatever |] LeftmostOutermost 0 `shouldBe` [λ| (λx.x) whatever |]
     it "Identity lambda is reduced to value when value is applied within one step" $ do
-      reduce [λ| (λx.x) whatever |] (ReduceInstruction LeftmostOutermost 1) `shouldBe` [λ| whatever |]
+      reduce [λ| (λx.x) whatever |] LeftmostOutermost 1 `shouldBe` [λ| whatever |]
     it "Endless recursion stops correctly at max steps" $ do
-      reduce [λ| (λx.x x) (λx.x x) |] (ReduceInstruction LeftmostOutermost 50) `shouldBe` [λ| (λx.x x) (λx.x x) |]
+      reduce [λ| (λx.x x) (λx.x x) |] LeftmostOutermost 50 `shouldBe` [λ| (λx.x x) (λx.x x) |]
   describe "General reduction tests" $ do
     it "Identity lambda is reduced to value when value is applied" $ do
       reduce' [λ| (λx.x) whatever |] `shouldBe` [λ| whatever |]
@@ -36,4 +36,4 @@ maxReductionAttempts = 20
 
 -- makes general tests easier for now - once leftmost innermost is implemented, this has to be changed
 reduce' :: Term -> Term
-reduce' term = reduce term (ReduceInstruction LeftmostOutermost maxReductionAttempts)
+reduce' term = reduce term LeftmostOutermost maxReductionAttempts

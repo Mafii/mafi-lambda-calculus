@@ -1,4 +1,4 @@
-module StepByStepReducer (reduce, ReduceInstruction (..), Strategy (..), Steps) where
+module StepByStepReducer (reduce, Strategy (..), Steps) where
 
 import Lib (Term (Abs, App, Var))
 import Reducer (betaReduce)
@@ -8,13 +8,10 @@ data Strategy = LeftmostOutermost | LeftmostInnermost
 
 type Steps = Int
 
-data ReduceInstruction = ReduceInstruction Strategy Steps
-  deriving (Show)
-
-reduce :: Term -> ReduceInstruction -> Term
-reduce term (ReduceInstruction _ 0) = term
-reduce _ (ReduceInstruction LeftmostInnermost _) = undefined "not done"
-reduce term (ReduceInstruction LeftmostOutermost steps) = reduce (reduce1 term) (ReduceInstruction LeftmostOutermost (steps - 1))
+reduce :: Term -> Strategy -> Steps -> Term
+reduce term _ 0 = term
+reduce _ LeftmostInnermost _ = undefined "not done"
+reduce term LeftmostOutermost steps = reduce (reduce1 term) LeftmostOutermost (steps - 1)
 
 -- Does leftmost outermost
 -- Remark: In case a normal form exists, the leftmost outermost reduction strategy will find it.
